@@ -53,8 +53,8 @@ log 'Verify production installer flow'
 ./tools/test-installer-flow.sh
 
 log 'Verify release identity and deployment links'
-grep -q '^48.12.9-r4-prod-r2$' VERSION || fail 'Root VERSION mismatch.'
-grep -q '^48.12.9-r4$' release/VERSION || fail 'Release VERSION mismatch.'
+grep -q '^48.13.0-prod-r1$' VERSION || fail 'Root VERSION mismatch.'
+grep -q '^48.13.0$' release/VERSION || fail 'Release VERSION mismatch.'
 grep -q 'V48129_BUILD = "r4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Application r4 marker missing.'
 grep -q 'install_bw_monitor_v48_12_9.sh' deploy/monitor/install-monitor.sh || fail 'Production installer is not linked to v48.12.9.'
 grep -q 'db-check.sh' deploy/monitor/install-monitor.sh || fail 'Database checker is not installed.'

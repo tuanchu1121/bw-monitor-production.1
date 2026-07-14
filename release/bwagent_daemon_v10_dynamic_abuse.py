@@ -70,7 +70,7 @@ STALE_IFACE_SECONDS = max(120, int(os.environ.get("BW_AGENT_STALE_IFACE_SECONDS"
 RUNTIME = os.environ.get("BW_AGENT_RUNTIME", "/var/lib/bw-agent/runtime.json")
 QUIET = os.environ.get("BW_AGENT_QUIET", "0") == "1"
 
-AGENT_VERSION = 10
+AGENT_VERSION = 11
 STOP_EVENT = threading.Event()
 
 
@@ -372,6 +372,86 @@ def split_domstats_blocks(text):
     return blocks
 
 
+def classify_vm_disk(vm_uuid, target, source):
+    """Classify libvirt blocks without assuming vda/vdb roles."""
+    source = str(source or "").strip()
+    target = str(target or "").strip()
+    if not source:
+        return "auxiliary"
+    filename = os.path.basename(source).lower()
+    if filename in {"cloud-drive.img", "config-drive.img", "cloudinit.img", "seed.img", "cidata.img"}:
+        return "auxiliary"
+    if "/vf-data/server/" in source and filename.endswith(".img"):
+        return "auxiliary"
+    if filename.endswith(".iso") or target.startswith(("sd", "hd")) and "cloud-drive" in filename:
+        return "auxiliary"
+    return "customer"
+
+
+def parse_mount_inventory(filesystems):
+    mounts = []
+    for fs in filesystems or []:
+        if not isinstance(fs, dict):
+            continue
+        mount = str(fs.get("mount") or "").rstrip("/") or "/"
+        device = str(fs.get("device") or "")
+        if not mount or not device.startswith("/dev/"):
+            continue
+        mounts.append({
+            "mount": mount,
+            "device": device,
+            "block": device_to_block_name(device) or "",
+            "fstype": str(fs.get("fstype") or ""),
+            "size": safe_int(fs.get("size"), 0),
+            "used": safe_int(fs.get("used"), 0),
+            "avail": safe_int(fs.get("avail"), 0),
+            "use_percent": safe_float(fs.get("use_percent"), 0.0),
+        })
+    mounts.sort(key=lambda x: len(x["mount"]), reverse=True)
+    return mounts
+
+
+def map_source_to_mount(source, mounts):
+    source = os.path.realpath(str(source or "")) if source else ""
+    if not source:
+        return {}
+    for item in mounts or []:
+        mount = item.get("mount") or "/"
+        if mount == "/":
+            matched = source.startswith("/")
+        else:
+            matched = source == mount or source.startswith(mount + "/")
+        if matched:
+            return dict(item)
+    return {}
+
+
+def read_block_stats(block_name):
+    """Return Linux block counters using the stable fields from /sys/class/block/*/stat."""
+    try:
+        parts = (Path("/sys/class/block") / block_name / "stat").read_text().split()
+        return {
+            "read_ios": safe_int(parts[0], 0),
+            "read_bytes": safe_int(parts[2], 0) * 512,
+            "read_ms": safe_int(parts[3], 0),
+            "write_ios": safe_int(parts[4], 0),
+            "write_bytes": safe_int(parts[6], 0) * 512,
+            "write_ms": safe_int(parts[7], 0),
+            "io_in_progress": safe_int(parts[8], 0),
+            "io_ms": safe_int(parts[9], 0),
+            "weighted_io_ms": safe_int(parts[10], 0),
+        }
+    except Exception:
+        return {}
+
+
+def md_raid_level(block_name):
+    try:
+        return read_text("/sys/class/block/%s/md/level" % block_name, "")
+    except Exception:
+        return ""
+
+
 def collect_vm_perf(state, now_ts, health=None):
     vms = []
     try:
@@ -379,6 +459,10 @@ def collect_vm_perf(state, now_ts, health=None):
     except Exception as e:
         add_error(health, "virsh domstats failed: %s" % e)
         return vms
+
+    # One filesystem scan for the whole node. Mapping is done in memory.
+    filesystems = collect_filesystems()
+    mount_inventory = parse_mount_inventory(filesystems)
 
     for vm_uuid, stats in split_domstats_blocks(out):
         vcpu_current = safe_int(stats.get("vcpu.current"), 0)
@@ -391,77 +475,73 @@ def collect_vm_perf(state, now_ts, health=None):
         if vcpu_current <= 0:
             vcpu_current = detected_vcpus
 
-        disk_read_bytes = 0
-        disk_write_bytes = 0
-        disk_read_reqs = 0
-        disk_write_reqs = 0
-        for k, v in stats.items():
-            if k.startswith("block.") and k.endswith(".rd.bytes"):
-                disk_read_bytes += safe_int(v, 0)
-            elif k.startswith("block.") and k.endswith(".wr.bytes"):
-                disk_write_bytes += safe_int(v, 0)
-            elif k.startswith("block.") and k.endswith(".rd.reqs"):
-                disk_read_reqs += safe_int(v, 0)
-            elif k.startswith("block.") and k.endswith(".wr.reqs"):
-                disk_write_reqs += safe_int(v, 0)
-
         key = "perf:%s" % vm_uuid
         old = state.get(key, {})
         old_time = safe_int(old.get("time"), now_ts)
         interval = max(1, now_ts - old_time)
-
         cpu_time_delta_ns = delta_counter(vcpu_time_ns, old.get("vcpu_time_ns", vcpu_time_ns))
+        cpu_core_percent = max(0.0, (cpu_time_delta_ns / float(interval) / 1000000000.0) * 100.0)
+        cpu_normalized_percent = max(0.0, min(100.0, cpu_core_percent / float(vcpu_current))) if vcpu_current > 0 else 0.0
 
-        # Core-based CPU:
-        #   100% = 1 full core
-        #   400% = 4 full cores
-        cpu_core_percent = (cpu_time_delta_ns / float(interval) / 1000000000.0) * 100.0 if interval > 0 else 0.0
-        cpu_core_percent = max(0.0, cpu_core_percent)
+        block_indexes = sorted({k.split(".")[1] for k in stats if k.startswith("block.") and len(k.split(".")) >= 3 and k.split(".")[1].isdigit()}, key=int)
+        disks = []
+        current_disk_state = {}
+        total_read_delta = total_write_delta = 0
+        total_read_reqs_delta = total_write_reqs_delta = 0
 
-        # Normalized CPU:
-        #   100% = all assigned vCPU fully used
-        if vcpu_current > 0:
-            cpu_normalized_percent = cpu_core_percent / float(vcpu_current)
-            cpu_normalized_percent = max(0.0, min(100.0, cpu_normalized_percent))
-        else:
-            cpu_normalized_percent = 0.0
+        for idx in block_indexes:
+            prefix = "block.%s" % idx
+            target = str(stats.get(prefix + ".name") or "").strip()
+            source = str(stats.get(prefix + ".path") or "").strip()
+            role = classify_vm_disk(vm_uuid, target, source)
+            counters = {
+                "read_bytes": safe_int(stats.get(prefix + ".rd.bytes"), 0),
+                "write_bytes": safe_int(stats.get(prefix + ".wr.bytes"), 0),
+                "read_reqs": safe_int(stats.get(prefix + ".rd.reqs"), 0),
+                "write_reqs": safe_int(stats.get(prefix + ".wr.reqs"), 0),
+            }
+            identity = "%s|%s" % (target, source)
+            old_disk = (old.get("disks") or {}).get(identity, {})
+            rd = delta_counter(counters["read_bytes"], old_disk.get("read_bytes", counters["read_bytes"]))
+            wd = delta_counter(counters["write_bytes"], old_disk.get("write_bytes", counters["write_bytes"]))
+            rr = delta_counter(counters["read_reqs"], old_disk.get("read_reqs", counters["read_reqs"]))
+            wr = delta_counter(counters["write_reqs"], old_disk.get("write_reqs", counters["write_reqs"]))
+            current_disk_state[identity] = counters
+            mount = map_source_to_mount(source, mount_inventory)
+            item = {
+                "index": safe_int(idx, 0), "target": target, "source": source, "role": role,
+                "mount": mount.get("mount", ""), "storage_device": mount.get("device", ""),
+                "storage_block": mount.get("block", ""), "storage_fstype": mount.get("fstype", ""),
+                "capacity_bytes": safe_int(stats.get(prefix + ".capacity"), 0),
+                "allocation_bytes": safe_int(stats.get(prefix + ".allocation"), 0),
+                "physical_bytes": safe_int(stats.get(prefix + ".physical"), 0),
+                "read_delta": rd, "write_delta": wd,
+                "read_reqs_delta": rr, "write_reqs_delta": wr,
+                "interval_seconds": interval,
+            }
+            disks.append(item)
+            if role == "customer":
+                total_read_delta += rd; total_write_delta += wd
+                total_read_reqs_delta += rr; total_write_reqs_delta += wr
 
-        disk_read_delta = delta_counter(disk_read_bytes, old.get("disk_read_bytes", disk_read_bytes))
-        disk_write_delta = delta_counter(disk_write_bytes, old.get("disk_write_bytes", disk_write_bytes))
-        disk_read_reqs_delta = delta_counter(disk_read_reqs, old.get("disk_read_reqs", disk_read_reqs))
-        disk_write_reqs_delta = delta_counter(disk_write_reqs, old.get("disk_write_reqs", disk_write_reqs))
-
-        state[key] = {
-            "time": now_ts,
-            "vcpu_time_ns": vcpu_time_ns,
-            "disk_read_bytes": disk_read_bytes,
-            "disk_write_bytes": disk_write_bytes,
-            "disk_read_reqs": disk_read_reqs,
-            "disk_write_reqs": disk_write_reqs,
-        }
-
+        state[key] = {"time": now_ts, "vcpu_time_ns": vcpu_time_ns, "disks": current_disk_state}
         vms.append({
-            "vm_uuid": vm_uuid,
-            "vcpu_current": vcpu_current,
-
-            # Backward-compatible field used by current monitor app.
-            # This is intentionally core-based in v4.
+            "vm_uuid": vm_uuid, "vcpu_current": vcpu_current,
             "cpu_percent": round(cpu_core_percent, 2),
-
-            # Explicit fields for newer monitor app versions.
             "cpu_core_percent": round(cpu_core_percent, 2),
             "cpu_normalized_percent": round(cpu_normalized_percent, 2),
-
             "ram_current_kib": safe_int(stats.get("balloon.current"), 0),
             "ram_maximum_kib": safe_int(stats.get("balloon.maximum"), 0),
             "ram_rss_kib": safe_int(stats.get("balloon.rss"), 0),
             "ram_available_kib": safe_int(stats.get("balloon.available"), 0),
             "ram_unused_kib": safe_int(stats.get("balloon.unused"), 0),
             "ram_usable_kib": safe_int(stats.get("balloon.usable"), 0),
-            "disk_read_delta": disk_read_delta,
-            "disk_write_delta": disk_write_delta,
-            "disk_read_reqs_delta": disk_read_reqs_delta,
-            "disk_write_reqs_delta": disk_write_reqs_delta,
+            "disk_read_delta": total_read_delta,
+            "disk_write_delta": total_write_delta,
+            "disk_read_reqs_delta": total_read_reqs_delta,
+            "disk_write_reqs_delta": total_write_reqs_delta,
+            "disk_count": sum(1 for d in disks if d.get("role") == "customer"),
+            "disks": disks,
         })
     return vms
 
@@ -579,55 +659,58 @@ def collect_node_host(state, now_ts, interval):
     load1, load5, load15 = parse_loadavg()
     mem_total, mem_available, mem_used, swap_total, swap_used = parse_meminfo()
     uptime_seconds = parse_uptime_seconds()
-
     cpu_total, cpu_idle = parse_proc_stat_cpu()
     old_cpu = state.get("host:cpu", {})
-    old_total = safe_int(old_cpu.get("total"), cpu_total)
-    old_idle = safe_int(old_cpu.get("idle"), cpu_idle)
-    delta_total = delta_counter(cpu_total, old_total)
-    delta_idle = delta_counter(cpu_idle, old_idle)
-    cpu_percent = 0.0
-    if delta_total > 0:
-        cpu_percent = ((delta_total - delta_idle) / float(delta_total)) * 100.0
-        cpu_percent = max(0.0, min(100.0, cpu_percent))
+    delta_total = delta_counter(cpu_total, safe_int(old_cpu.get("total"), cpu_total))
+    delta_idle = delta_counter(cpu_idle, safe_int(old_cpu.get("idle"), cpu_idle))
+    cpu_percent = max(0.0, min(100.0, ((delta_total - delta_idle) / float(delta_total)) * 100.0)) if delta_total > 0 else 0.0
     state["host:cpu"] = {"total": cpu_total, "idle": cpu_idle, "time": now_ts}
 
     filesystems = collect_filesystems()
-    block_names = sorted({device_to_block_name(fs.get("device")) for fs in filesystems})
-    block_names = [x for x in block_names if x]
-
-    disk_read_bytes = 0
-    disk_write_bytes = 0
-    for block in block_names:
-        r, w = read_block_bytes(block)
-        disk_read_bytes += r
-        disk_write_bytes += w
-
-    old_disk = state.get("host:disk", {})
-    disk_read_delta = delta_counter(disk_read_bytes, old_disk.get("read_bytes", disk_read_bytes))
-    disk_write_delta = delta_counter(disk_write_bytes, old_disk.get("write_bytes", disk_write_bytes))
-    state["host:disk"] = {"read_bytes": disk_read_bytes, "write_bytes": disk_write_bytes, "time": now_ts, "blocks": block_names}
-
-    disk_read_bps = disk_read_delta / float(interval) if interval > 0 else 0.0
-    disk_write_bps = disk_write_delta / float(interval) if interval > 0 else 0.0
+    storage_devices = []
+    total_read_delta = total_write_delta = 0
+    total_read_ios_delta = total_write_ios_delta = 0
+    seen = set()
+    for fs in filesystems:
+        block = device_to_block_name(fs.get("device"))
+        if not block or block in seen:
+            continue
+        seen.add(block)
+        current = read_block_stats(block)
+        if not current:
+            continue
+        old = state.get("host:block:%s" % block, {})
+        rd = delta_counter(current.get("read_bytes"), old.get("read_bytes", current.get("read_bytes")))
+        wd = delta_counter(current.get("write_bytes"), old.get("write_bytes", current.get("write_bytes")))
+        rr = delta_counter(current.get("read_ios"), old.get("read_ios", current.get("read_ios")))
+        wr = delta_counter(current.get("write_ios"), old.get("write_ios", current.get("write_ios")))
+        io_ms = delta_counter(current.get("io_ms"), old.get("io_ms", current.get("io_ms")))
+        weighted_ms = delta_counter(current.get("weighted_io_ms"), old.get("weighted_io_ms", current.get("weighted_io_ms")))
+        state["host:block:%s" % block] = dict(current, time=now_ts)
+        total_read_delta += rd; total_write_delta += wd
+        total_read_ios_delta += rr; total_write_ios_delta += wr
+        storage_devices.append({
+            "mount": fs.get("mount", ""), "device": fs.get("device", ""), "block": block,
+            "raid_level": md_raid_level(block), "fstype": fs.get("fstype", ""),
+            "size": safe_int(fs.get("size"), 0), "used": safe_int(fs.get("used"), 0),
+            "avail": safe_int(fs.get("avail"), 0), "use_percent": safe_float(fs.get("use_percent"), 0.0),
+            "read_delta": rd, "write_delta": wd, "read_ios_delta": rr, "write_ios_delta": wr,
+            "read_bps": rd / float(interval), "write_bps": wd / float(interval),
+            "read_iops": rr / float(interval), "write_iops": wr / float(interval),
+            "util_percent": min(100.0, io_ms / float(interval * 10)) if interval > 0 else 0.0,
+            "weighted_io_ms_delta": weighted_ms,
+        })
 
     return {
-        "load1": round(load1, 2),
-        "load5": round(load5, 2),
-        "load15": round(load15, 2),
-        "cpu_count": os.cpu_count() or 0,
-        "cpu_percent": round(cpu_percent, 2),
-        "mem_total": mem_total,
-        "mem_available": mem_available,
-        "mem_used": mem_used,
-        "swap_total": swap_total,
-        "swap_used": swap_used,
-        "disk_read_delta": disk_read_delta,
-        "disk_write_delta": disk_write_delta,
-        "disk_read_bps": round(disk_read_bps, 2),
-        "disk_write_bps": round(disk_write_bps, 2),
-        "uptime_seconds": uptime_seconds,
-        "filesystems": filesystems,
+        "load1": round(load1, 2), "load5": round(load5, 2), "load15": round(load15, 2),
+        "cpu_count": os.cpu_count() or 0, "cpu_percent": round(cpu_percent, 2),
+        "mem_total": mem_total, "mem_available": mem_available, "mem_used": mem_used,
+        "swap_total": swap_total, "swap_used": swap_used,
+        "disk_read_delta": total_read_delta, "disk_write_delta": total_write_delta,
+        "disk_read_reqs_delta": total_read_ios_delta, "disk_write_reqs_delta": total_write_ios_delta,
+        "disk_read_bps": round(total_read_delta / float(interval), 2) if interval > 0 else 0.0,
+        "disk_write_bps": round(total_write_delta / float(interval), 2) if interval > 0 else 0.0,
+        "uptime_seconds": uptime_seconds, "filesystems": filesystems, "storage_devices": storage_devices,
     }
 
 

@@ -1,3 +1,9 @@
+## 48.13.0-prod-r1
+
+- Per-VM-disk libvirt metrics with source, mount, backend, capacity, allocation, throughput and IOPS.
+- Node storage current metrics and top contributors page.
+- Backward-compatible aggregate disk metrics and Agent v10 payload support.
+
 # Changelog
 
 ## 48.12.9-r4-prod-r2

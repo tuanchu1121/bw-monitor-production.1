@@ -1,0 +1,9 @@
+BW Monitor v48.13.0 - Per-Disk Storage Attribution
+
+- Agent v11 retains per-libvirt-block identity and counters.
+- Maps VM disk source paths to mounted node storage without per-VM shell calls.
+- Keeps legacy aggregate VM disk fields for backward compatibility.
+- Adds current/history per-disk tables and node storage current table.
+- Adds /storage operations page with top VM contributors by throughput and IOPS.
+- Excludes cloud-drive and no-source auxiliary devices from customer disk totals.
+- Adds assigned, host allocated and physical bytes for every VM disk.

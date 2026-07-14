@@ -7,6 +7,7 @@ import math
 import shutil
 import platform
 import json
+from urllib.parse import quote
 import subprocess
 import sys
 from datetime import datetime
@@ -30,6 +31,7 @@ app = Flask(__name__)
 
 TOKEN = os.environ.get("BW_MONITOR_TOKEN", "123456")
 DB = os.environ.get("BW_MONITOR_DB", "/opt/bw-monitor/bandwidth.db")
+DISK_HISTORY_ENABLED = os.environ.get("BW_MONITOR_DISK_HISTORY", "0") == "1"
 
 # Bootstrap defaults. Real dashboard/admin users are stored in SQLite.
 ADMIN_USERNAME = os.environ.get("BW_ADMIN_USERNAME", "admin")
@@ -6452,6 +6454,7 @@ def page(title, content):
                     <a href="{url_for('index')}">Dashboard</a>
                     <a href="{url_for('top_page')}">Top VM</a>
                     <a href="{url_for('vm_abuse_page')}">VM Abuse</a>
+                    <a href="/storage">Storage I/O</a>
                     <a href="{url_for('node_health_page')}">Node Health</a>
                 </nav>
                 <div class="theme-switch" role="group" aria-label="Theme mode">
@@ -10252,6 +10255,68 @@ def run_retention(dry_run=False):
         conn.close()
 
 
+def ensure_disk_detail_schema(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS vm_disk_current (
+      node TEXT NOT NULL, vm_uuid TEXT NOT NULL, target TEXT NOT NULL, source TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT 'unknown', mount TEXT NOT NULL DEFAULT '', storage_device TEXT NOT NULL DEFAULT '',
+      storage_block TEXT NOT NULL DEFAULT '', storage_fstype TEXT NOT NULL DEFAULT '',
+      capacity_bytes INTEGER NOT NULL DEFAULT 0, allocation_bytes INTEGER NOT NULL DEFAULT 0, physical_bytes INTEGER NOT NULL DEFAULT 0,
+      interval_seconds INTEGER NOT NULL DEFAULT 300, read_bps REAL NOT NULL DEFAULT 0, write_bps REAL NOT NULL DEFAULT 0,
+      read_iops REAL NOT NULL DEFAULT 0, write_iops REAL NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(node,vm_uuid,target,source)
+    );
+    CREATE INDEX IF NOT EXISTS idx_vm_disk_storage_write ON vm_disk_current(node,mount,write_bps DESC);
+    CREATE INDEX IF NOT EXISTS idx_vm_disk_storage_iops ON vm_disk_current(node,mount,write_iops DESC);
+    CREATE TABLE IF NOT EXISTS vm_disk_stats (
+      time INTEGER NOT NULL,bucket INTEGER NOT NULL,node TEXT NOT NULL,vm_uuid TEXT NOT NULL,target TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT 'unknown',mount TEXT NOT NULL DEFAULT '',storage_device TEXT NOT NULL DEFAULT '',storage_block TEXT NOT NULL DEFAULT '',
+      interval_seconds INTEGER NOT NULL DEFAULT 300,read_delta INTEGER NOT NULL DEFAULT 0,write_delta INTEGER NOT NULL DEFAULT 0,
+      read_reqs_delta INTEGER NOT NULL DEFAULT 0,write_reqs_delta INTEGER NOT NULL DEFAULT 0,
+      capacity_bytes INTEGER NOT NULL DEFAULT 0,allocation_bytes INTEGER NOT NULL DEFAULT 0,physical_bytes INTEGER NOT NULL DEFAULT 0,last_push INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_vm_disk_stats_lookup ON vm_disk_stats(node,vm_uuid,target,bucket);
+    CREATE TABLE IF NOT EXISTS node_storage_current (
+      node TEXT NOT NULL,mount TEXT NOT NULL,device TEXT NOT NULL DEFAULT '',block TEXT NOT NULL DEFAULT '',raid_level TEXT NOT NULL DEFAULT '',
+      fstype TEXT NOT NULL DEFAULT '',size INTEGER NOT NULL DEFAULT 0,used INTEGER NOT NULL DEFAULT 0,avail INTEGER NOT NULL DEFAULT 0,
+      use_percent REAL NOT NULL DEFAULT 0,read_bps REAL NOT NULL DEFAULT 0,write_bps REAL NOT NULL DEFAULT 0,
+      read_iops REAL NOT NULL DEFAULT 0,write_iops REAL NOT NULL DEFAULT 0,util_percent REAL NOT NULL DEFAULT 0,last_seen INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(node,mount)
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_storage_write ON node_storage_current(write_bps DESC,last_seen DESC);
+    """)
+
+
+def ingest_disk_details(conn,node,data_time,bucket,interval_seconds,vms,node_host):
+    ensure_disk_detail_schema(conn)
+    seen=[]
+    for vm in vms or []:
+        if not isinstance(vm,dict): continue
+        uuid=str(vm.get('vm_uuid') or '').strip()
+        if not uuid: continue
+        for d in vm.get('disks') or []:
+            if not isinstance(d,dict): continue
+            target=str(d.get('target') or '').strip()
+            source=str(d.get('source') or '').strip()
+            if not target: continue
+            role=str(d.get('role') or 'unknown')[:32]
+            di=max(1,safe_int(d.get('interval_seconds'),interval_seconds))
+            rd=max(0,safe_int(d.get('read_delta'),0)); wd=max(0,safe_int(d.get('write_delta'),0))
+            rr=max(0,safe_int(d.get('read_reqs_delta'),0)); wr=max(0,safe_int(d.get('write_reqs_delta'),0))
+            values=(node,uuid,target,source,role,str(d.get('mount') or ''),str(d.get('storage_device') or ''),str(d.get('storage_block') or ''),str(d.get('storage_fstype') or ''),max(0,safe_int(d.get('capacity_bytes'),0)),max(0,safe_int(d.get('allocation_bytes'),0)),max(0,safe_int(d.get('physical_bytes'),0)),di,rd/float(di),wd/float(di),rr/float(di),wr/float(di),data_time)
+            conn.execute("""INSERT INTO vm_disk_current(node,vm_uuid,target,source,role,mount,storage_device,storage_block,storage_fstype,capacity_bytes,allocation_bytes,physical_bytes,interval_seconds,read_bps,write_bps,read_iops,write_iops,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(node,vm_uuid,target,source) DO UPDATE SET role=excluded.role,mount=excluded.mount,storage_device=excluded.storage_device,storage_block=excluded.storage_block,storage_fstype=excluded.storage_fstype,capacity_bytes=excluded.capacity_bytes,allocation_bytes=excluded.allocation_bytes,physical_bytes=excluded.physical_bytes,interval_seconds=excluded.interval_seconds,read_bps=excluded.read_bps,write_bps=excluded.write_bps,read_iops=excluded.read_iops,write_iops=excluded.write_iops,last_seen=excluded.last_seen""",values)
+            if DISK_HISTORY_ENABLED and role == "customer":
+                conn.execute("""INSERT INTO vm_disk_stats(time,bucket,node,vm_uuid,target,source,role,mount,storage_device,storage_block,interval_seconds,read_delta,write_delta,read_reqs_delta,write_reqs_delta,capacity_bytes,allocation_bytes,physical_bytes,last_push) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(data_time,bucket,node,uuid,target,source,role,str(d.get('mount') or ''),str(d.get('storage_device') or ''),str(d.get('storage_block') or ''),di,rd,wd,rr,wr,max(0,safe_int(d.get('capacity_bytes'),0)),max(0,safe_int(d.get('allocation_bytes'),0)),max(0,safe_int(d.get('physical_bytes'),0)),data_time))
+            seen.append((uuid,target,source))
+    if seen:
+        conn.execute("DELETE FROM vm_disk_current WHERE node=? AND last_seen<?",(node,data_time))
+    for st in (node_host or {}).get('storage_devices') or []:
+        if not isinstance(st,dict): continue
+        mount=str(st.get('mount') or '').strip()
+        if not mount: continue
+        conn.execute("""INSERT INTO node_storage_current(node,mount,device,block,raid_level,fstype,size,used,avail,use_percent,read_bps,write_bps,read_iops,write_iops,util_percent,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(node,mount) DO UPDATE SET device=excluded.device,block=excluded.block,raid_level=excluded.raid_level,fstype=excluded.fstype,size=excluded.size,used=excluded.used,avail=excluded.avail,use_percent=excluded.use_percent,read_bps=excluded.read_bps,write_bps=excluded.write_bps,read_iops=excluded.read_iops,write_iops=excluded.write_iops,util_percent=excluded.util_percent,last_seen=excluded.last_seen""",(node,mount,str(st.get('device') or ''),str(st.get('block') or ''),str(st.get('raid_level') or ''),str(st.get('fstype') or ''),max(0,safe_int(st.get('size'),0)),max(0,safe_int(st.get('used'),0)),max(0,safe_int(st.get('avail'),0)),float(st.get('use_percent') or 0),float(st.get('read_bps') or 0),float(st.get('write_bps') or 0),float(st.get('read_iops') or 0),float(st.get('write_iops') or 0),float(st.get('util_percent') or 0),data_time))
+
+
 @app.route("/push", methods=["POST"])
 def push():
     if request.headers.get("X-Token") != TOKEN:
@@ -11058,6 +11123,7 @@ def push():
                 alert_level, alert_flags,
             ))
 
+        ingest_disk_details(conn, node, data_time, bucket, interval_seconds, vms, node_host)
         refresh_fast_current_state(conn, node, data_time, interval_seconds, interfaces, vms, node_host, inventory_complete)
         conn.commit()
     finally:
@@ -23770,4 +23836,55 @@ def page(title, content):
         response.set_data(html)
     except Exception:
         app.logger.exception("Could not apply v48.12.9 operations Abuse UI")
+    return response
+
+
+# ---------------------------------------------------------------------------
+# v48.13.0 per-disk and storage contributor views
+# ---------------------------------------------------------------------------
+
+def _disk_fmt_bytes(value):
+    value=float(value or 0)
+    units=("B","KiB","MiB","GiB","TiB","PiB")
+    idx=0
+    while abs(value)>=1024.0 and idx<len(units)-1:
+        value/=1024.0; idx+=1
+    return ("%.0f %s" if idx==0 else "%.2f %s") % (value,units[idx])
+
+def _disk_fmt_rate(value):
+    return _disk_fmt_bytes(value) + "/s"
+
+@app.route('/storage')
+def storage_page_v48130():
+    conn=db(); ensure_disk_detail_schema(conn)
+    node=(request.args.get('node') or '').strip(); mount=(request.args.get('mount') or '').strip()
+    params=[]; where=[]
+    if node: where.append('s.node=?'); params.append(node)
+    if mount: where.append('s.mount=?'); params.append(mount)
+    sql=' WHERE '+ ' AND '.join(where) if where else ''
+    storages=conn.execute('SELECT node,mount,device,block,raid_level,fstype,size,used,avail,use_percent,read_bps,write_bps,read_iops,write_iops,util_percent,last_seen FROM node_storage_current s'+sql+' ORDER BY write_iops DESC,write_bps DESC',params).fetchall()
+    node_options=[r[0] for r in conn.execute('SELECT DISTINCT node FROM node_storage_current ORDER BY node').fetchall()]
+    cards=[]
+    for st in storages:
+        n,mnt,dev,blk,raid,fs,size,used,avail,usep,rb,wb,ri,wi,util,seen=st
+        top=conn.execute('SELECT vm_uuid,target,source,capacity_bytes,allocation_bytes,read_bps,write_bps,read_iops,write_iops FROM vm_disk_current WHERE node=? AND mount=? AND role="customer" ORDER BY write_iops DESC,write_bps DESC LIMIT 30',(n,mnt)).fetchall()
+        rows=''.join(f"""<tr><td><a href="/node/{quote(n)}?vm={quote(str(r[0]))}"><b>{escape(r[0])}</b></a></td><td><b>{escape(r[1])}</b></td><td><code title="{escape(r[2])}">{escape(r[2])}</code></td><td>{_disk_fmt_bytes(r[3])}</td><td>{_disk_fmt_bytes(r[4])}</td><td>{_disk_fmt_rate(r[5])}</td><td>{_disk_fmt_rate(r[6])}</td><td>{float(r[7] or 0):,.1f}</td><td><b>{float(r[8] or 0):,.1f}</b></td></tr>""" for r in top)
+        if not rows: rows='<tr><td colspan="9"><span class="muted">No per-disk data. Upgrade this node to Agent v11.</span></td></tr>'
+        cards.append(f"""<section class="card"><div class="card-title"><div><h3>{escape(n)} · {escape(mnt)}</h3><small>{escape(dev)} · block {escape(blk or '-')} · {escape(raid or 'hardware/unknown RAID')} · {escape(fs)}</small></div><span class="badge">{human_age_short(max(0, now_ts()-int(seen or 0)))}</span></div><div class="stats-grid"><div class="stat"><small>CAPACITY</small><b>{_disk_fmt_bytes(size)}</b><span>{float(usep or 0):.1f}% used</span></div><div class="stat"><small>READ</small><b>{_disk_fmt_rate(rb)}</b><span>{float(ri or 0):,.1f} IOPS</span></div><div class="stat"><small>WRITE</small><b>{_disk_fmt_rate(wb)}</b><span>{float(wi or 0):,.1f} IOPS</span></div><div class="stat"><small>UTIL</small><b>{float(util or 0):.1f}%</b><span>logical block busy</span></div></div><h4>Top VM disks on this storage</h4><div class="table-wrap"><table><thead><tr><th>VM UUID</th><th>DISK</th><th>SOURCE</th><th>ASSIGNED</th><th>HOST ALLOCATED</th><th>READ</th><th>WRITE</th><th>R IOPS</th><th>W IOPS</th></tr></thead><tbody>{rows}</tbody></table></div></section>""")
+    options=''.join(f'<option value="{escape(x)}" {"selected" if x==node else ""}>{escape(x)}</option>' for x in node_options)
+    content=f"""<div class="hero"><div><div class="eyebrow">DISK DETAIL</div><h1>Storage I/O</h1><p>Map node storage → VM disk → throughput and IOPS.</p></div></div><section class="card"><form method="get" class="filters"><label>Node<select name="node"><option value="">All nodes</option>{options}</select></label><label>Mount<input name="mount" value="{escape(mount)}" placeholder="/home2"></label><button type="submit">Apply</button></form></section>{''.join(cards) or '<section class="card"><p>No Agent v11 storage data yet.</p></section>'}"""
+    return page('Storage I/O',content)
+
+# Add one small navigation item without altering the existing layout.
+_page_v48130_base = page
+def page(title, content):
+    response=_page_v48130_base(title,content)
+    try:
+        html=response.get_data(as_text=True)
+        if '/storage' not in html:
+            html=html.replace('<a href="/node-health"', '<a href="/storage">Storage I/O</a><a href="/node-health"',1)
+            html=html.replace('<a href="/nodes"', '<a href="/storage">Storage I/O</a><a href="/nodes"',1)
+        response.set_data(html)
+    except Exception:
+        app.logger.exception('Could not add Storage I/O navigation')
     return response
