@@ -1,0 +1,7 @@
+v48.13.1-prod-r2
+
+Installer regression compatibility fix:
+- Accept vm_abuse_page_v48131 as the active guest-aware abuse view.
+- Accept vm_page_v48131 as the active guest-aware VM detail view.
+- Prevents false preflight failures after the v48.13.1 per-disk UI wrappers are activated.
+- No database migration or reset is required.
