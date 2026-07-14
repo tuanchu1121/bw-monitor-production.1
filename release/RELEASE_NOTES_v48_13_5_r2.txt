@@ -1,0 +1,10 @@
+BW Monitor 48.13.5-prod-r2-vm-disk-panels
+
+Focused UI correction
+
+1. VM Detail → Overview keeps one compact total VM Disk capacity meter.
+2. VM Detail → Virtual Disk I/O no longer repeats a TOTAL HOST ALLOCATED / ASSIGNED strip.
+3. Virtual Disk I/O renders only separate customer-disk panels, one for each vda/vdb/etc.
+4. Each disk panel shows Allocated / Assigned with a percentage bar, Read, Write, Read IOPS, Write IOPS, mount/device, source, filesystem, physical allocation, and last sample.
+5. Top VM keeps the total allocated / assigned meter and independent ALLOC, ASSIGNED, and % sorting.
+6. All v48.13.5 filesystem, /home discovery, exact UUID purge, Storage I/O, Node Filesystems, Abuse, Dashboard, Top VM, Node Health, and Admin behavior remains unchanged.

@@ -24636,11 +24636,10 @@ def _v48133_vm_disk_overview_cards(rows):
 
 
 def _v48133_vm_disk_io_card(rows):
+    """Render one clean panel per customer disk with no repeated total strip."""
     if not rows:
         return ""
     panels = []
-    total_assigned = total_allocated = total_physical = 0
-    total_read = total_write = total_ri = total_wi = 0.0
     latest = 0
     for target,source,mount,device,block,fstype,assigned,allocated,physical,rb,wb,ri,wi,seen in rows:
         assigned = max(0, safe_int(assigned, 0))
@@ -24648,13 +24647,6 @@ def _v48133_vm_disk_io_card(rows):
         physical = max(0, safe_int(physical, 0))
         pct = allocated * 100.0 / assigned if assigned > 0 else 0.0
         level = _v48133_disk_level(pct)
-        total_assigned += assigned
-        total_allocated += allocated
-        total_physical += physical
-        total_read += max(0.0, safe_float(rb, 0))
-        total_write += max(0.0, safe_float(wb, 0))
-        total_ri += max(0.0, safe_float(ri, 0))
-        total_wi += max(0.0, safe_float(wi, 0))
         latest = max(latest, safe_int(seen, 0))
         dev = device or (("/dev/" + block) if block else "-")
         panels.append(f'''
@@ -24664,7 +24656,7 @@ def _v48133_vm_disk_io_card(rows):
             <div class="vm-disk-storage-badge"><b>{escape(mount or "-")}</b><small>{escape(dev)}</small></div>
           </div>
           <div class="vm-disk-panel-capacity">
-            <div><span>HOST ALLOCATED / ASSIGNED</span><b>{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b><small>{pct:.1f}% allocated</small></div>
+            <div><span>ALLOCATED / ASSIGNED</span><b>{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b><small>{pct:.1f}% allocated</small></div>
             <span class="vm-disk-overview-meter"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></span>
           </div>
           <div class="vm-disk-panel-metrics">
@@ -24680,14 +24672,12 @@ def _v48133_vm_disk_io_card(rows):
             <div><span>LAST SAMPLE</span><b>{fmt_push(seen)}</b></div>
           </div>
         </article>''')
-    total_pct = total_allocated * 100.0 / total_assigned if total_assigned > 0 else 0.0
     return f'''
-    <div class="card vm-disk-detail-card" id="virtual-disk-io">
+    <div class="card vm-disk-detail-card vm-disk-panels-only" id="virtual-disk-io">
       <div class="table-title-row">
-        <div><h3>Virtual Disk I/O</h3><div class="table-hint">Each customer disk is separate. Capacity is host allocation / assigned virtual capacity; I/O is the latest per-disk sample.</div></div>
-        <div class="count-badges"><span>Disks <b>{len(rows)}</b></span><span>Allocated <b>{_disk_io_bytes(total_allocated)}</b></span><span>Assigned <b>{_disk_io_bytes(total_assigned)}</b></span><span>Read <b>{_disk_io_rate(total_read)}</b></span><span>Write <b>{_disk_io_rate(total_write)}</b></span><span>Seen <b>{fmt_push(latest)}</b></span></div>
+        <div><h3>Virtual Disk I/O</h3><div class="table-hint">Each customer disk is shown separately with its own capacity, current Read/Write and IOPS.</div></div>
+        <div class="count-badges"><span>Disks <b>{len(rows)}</b></span><span>Seen <b>{fmt_push(latest)}</b></span></div>
       </div>
-      <div class="vm-disk-total-strip"><div><span>TOTAL HOST ALLOCATED / ASSIGNED</span><b>{_disk_io_bytes(total_allocated)} / {_disk_io_bytes(total_assigned)}</b><small>{total_pct:.1f}% · Physical {_disk_io_bytes(total_physical)} · R/W IOPS {_disk_io_iops(total_ri)} / {_disk_io_iops(total_wi)}</small></div><span class="vm-disk-overview-meter"><i style="width:{min(100.0,max(0.0,total_pct)):.1f}%"></i></span></div>
       <div class="vm-disk-detail-grid">{''.join(panels)}</div>
     </div>
     '''
@@ -24696,8 +24686,8 @@ def _v48133_vm_disk_io_card(rows):
 V48133_VM_CSS = r'''
 <style id="v48134-vm-disk-detail">
 .vm-overview-disk-stat{min-width:225px}.vm-disk-stat-label{font-size:10px;font-weight:950;color:#667085;letter-spacing:.055em}.vm-overview-disk-stat>b{display:block;margin-top:5px!important;font-size:15px!important;white-space:nowrap}.vm-overview-disk-stat>small{display:block;margin-top:4px!important}.vm-disk-overview-meter{display:block;height:6px;margin-top:8px;border-radius:999px;background:#e4e7ec;overflow:hidden}.vm-disk-overview-meter i{display:block;height:100%;border-radius:inherit;background:#12b76a}.disk-level-warm .vm-disk-overview-meter i{background:#fdb022}.disk-level-hot .vm-disk-overview-meter i{background:#f79009}.disk-level-critical .vm-disk-overview-meter i{background:#f04438}.vm-disk-storage-line{color:#667085!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-live-line{color:#475467!important;font-size:9px!important;line-height:1.35!important}
-.vm-disk-detail-card{margin-top:16px}.vm-disk-total-strip{display:grid;grid-template-columns:minmax(260px,420px);gap:8px;margin:13px 0 16px;padding:13px 14px;border:1px solid #dbe3ef;border-radius:12px;background:#f8fafc}.vm-disk-total-strip span,.vm-disk-panel-capacity span,.vm-disk-panel-metrics span,.vm-disk-panel-meta span{display:block;color:#667085;font-size:9px;font-weight:900;letter-spacing:.055em}.vm-disk-total-strip b{display:block;margin-top:4px;font-size:16px}.vm-disk-total-strip small{display:block;margin-top:4px;color:#667085}.vm-disk-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(410px,1fr));gap:12px}.vm-disk-panel{border:1px solid #dbe3ef;border-radius:13px;padding:14px;background:#fff;min-width:0}.vm-disk-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.vm-disk-panel-head span{font-size:9px;color:#667085;font-weight:900;letter-spacing:.07em}.vm-disk-panel-head h4{font-size:18px;margin:3px 0 0}.vm-disk-storage-badge{text-align:right;min-width:0}.vm-disk-storage-badge b,.vm-disk-storage-badge small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-storage-badge b{font-size:12px}.vm-disk-storage-badge small{margin-top:3px;color:#667085;font-size:9px}.vm-disk-panel-capacity{margin-top:13px}.vm-disk-panel-capacity b{display:block;margin-top:4px;font-size:15px}.vm-disk-panel-capacity small{display:block;margin-top:3px;color:#667085;font-size:10px}.vm-disk-panel-metrics{display:grid;grid-template-columns:repeat(4,minmax(80px,1fr));gap:8px;margin-top:13px}.vm-disk-panel-metrics>div{padding:10px;border-radius:9px;background:#f8fafc;border:1px solid #edf0f4}.vm-disk-panel-metrics b{display:block;margin-top:4px;font-size:12px;white-space:nowrap}.vm-disk-panel-meta{display:grid;grid-template-columns:minmax(180px,2fr) repeat(3,minmax(90px,1fr));gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid #edf0f4}.vm-disk-panel-meta b,.vm-disk-panel-meta code{display:block;margin-top:4px;font-size:10px}.vm-disk-panel-meta code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475467}.vm-disk-panel.disk-level-hot,.vm-disk-panel.disk-level-critical{border-color:#fed7aa}.vm-disk-panel.disk-level-critical{border-color:#fda29b}
-html[data-theme=dark] .vm-disk-stat-label,html[data-theme=dark] .vm-disk-storage-line,html[data-theme=dark] .vm-disk-storage-badge small,html[data-theme=dark] .vm-disk-panel-capacity small,html[data-theme=dark] .vm-disk-total-strip span,html[data-theme=dark] .vm-disk-total-strip small,html[data-theme=dark] .vm-disk-panel-metrics span,html[data-theme=dark] .vm-disk-panel-meta span{color:#9fb0c4!important}html[data-theme=dark] .vm-disk-overview-meter{background:#334155}html[data-theme=dark] .vm-disk-total-strip,html[data-theme=dark] .vm-disk-panel-metrics>div{background:#132238;border-color:#31445e}html[data-theme=dark] .vm-disk-panel{background:#0f1b2c;border-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta{border-top-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta code{color:#d0d9e7}
+.vm-disk-detail-card{margin-top:16px}.vm-disk-detail-card .table-title-row{margin-bottom:13px}.vm-disk-panel-capacity span,.vm-disk-panel-metrics span,.vm-disk-panel-meta span{display:block;color:#667085;font-size:9px;font-weight:900;letter-spacing:.055em}.vm-disk-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(410px,1fr));gap:12px}.vm-disk-panel{border:1px solid #dbe3ef;border-radius:13px;padding:14px;background:#fff;min-width:0}.vm-disk-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.vm-disk-panel-head span{font-size:9px;color:#667085;font-weight:900;letter-spacing:.07em}.vm-disk-panel-head h4{font-size:18px;margin:3px 0 0}.vm-disk-storage-badge{text-align:right;min-width:0}.vm-disk-storage-badge b,.vm-disk-storage-badge small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-storage-badge b{font-size:12px}.vm-disk-storage-badge small{margin-top:3px;color:#667085;font-size:9px}.vm-disk-panel-capacity{margin-top:13px}.vm-disk-panel-capacity b{display:block;margin-top:4px;font-size:15px}.vm-disk-panel-capacity small{display:block;margin-top:3px;color:#667085;font-size:10px}.vm-disk-panel-metrics{display:grid;grid-template-columns:repeat(4,minmax(80px,1fr));gap:8px;margin-top:13px}.vm-disk-panel-metrics>div{padding:10px;border-radius:9px;background:#f8fafc;border:1px solid #edf0f4}.vm-disk-panel-metrics b{display:block;margin-top:4px;font-size:12px;white-space:nowrap}.vm-disk-panel-meta{display:grid;grid-template-columns:minmax(180px,2fr) repeat(3,minmax(90px,1fr));gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid #edf0f4}.vm-disk-panel-meta b,.vm-disk-panel-meta code{display:block;margin-top:4px;font-size:10px}.vm-disk-panel-meta code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475467}.vm-disk-panel.disk-level-hot,.vm-disk-panel.disk-level-critical{border-color:#fed7aa}.vm-disk-panel.disk-level-critical{border-color:#fda29b}
+html[data-theme=dark] .vm-disk-stat-label,html[data-theme=dark] .vm-disk-storage-line,html[data-theme=dark] .vm-disk-storage-badge small,html[data-theme=dark] .vm-disk-panel-capacity small,html[data-theme=dark] .vm-disk-panel-metrics span,html[data-theme=dark] .vm-disk-panel-meta span{color:#9fb0c4!important}html[data-theme=dark] .vm-disk-overview-meter{background:#334155}html[data-theme=dark] .vm-disk-panel-metrics>div{background:#132238;border-color:#31445e}html[data-theme=dark] .vm-disk-panel{background:#0f1b2c;border-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta{border-top-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta code{color:#d0d9e7}
 @media(max-width:900px){.vm-disk-detail-grid{grid-template-columns:1fr}.vm-disk-panel-metrics{grid-template-columns:1fr 1fr}.vm-disk-panel-meta{grid-template-columns:1fr 1fr}}
 </style>
 '''
@@ -25352,6 +25342,7 @@ app.view_functions['admin_page'] = admin_page_v48134
 # ---------------------------------------------------------------------------
 
 V48135_VERSION = "48.13.5"
+V48135_BUILD = "r2"
 
 
 def _v48135_base_device(device):
@@ -25520,7 +25511,7 @@ def vm_page_v48135():
         html = html.replace('</head>', V48133_VM_CSS + V48135_VM_CSS + '</head>', 1)
         response.set_data(html)
     except Exception:
-        app.logger.exception("Could not apply v48.13.5 VM disk capacity/detail UI")
+        app.logger.exception("Could not apply v48.13.5-r2 VM disk panel UI")
     return response
 
 

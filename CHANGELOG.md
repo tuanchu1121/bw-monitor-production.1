@@ -1,5 +1,12 @@
 # Changelog
 
+## 48.13.5-prod-r2-vm-disk-panels
+
+- Removed the repeated `TOTAL HOST ALLOCATED / ASSIGNED` strip from VM Detail → Virtual Disk I/O.
+- Kept the compact total VM Disk capacity meter in Overview.
+- Virtual Disk I/O now shows only clean, separate `vda`, `vdb`, and other customer-disk panels, each with Allocated / Assigned, percentage bar, Read, Write, Read IOPS, Write IOPS, source, filesystem, physical size, and last sample.
+- Kept Top VM total disk capacity between RAM and Disk R/s with independent `ALLOC`, `ASSIGNED`, and `%` sorting.
+
 ## 48.13.5-prod-r1-storage-root-bars
 
 - Fixed the maintenance-import migration bug that cleared every VM's Current Abuse when one UUID purge job started. Purging one UUID now removes only that UUID while unrelated Current Abuse and Abuse Events remain visible immediately.

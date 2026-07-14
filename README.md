@@ -1,8 +1,8 @@
-# BW Monitor v48.13.5 Storage Root Bars Production
+# BW Monitor v48.13.5-r2 VM Disk Panels Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor 48.13.5-prod-r1-storage-root-bars**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor 48.13.5-prod-r2-vm-disk-panels**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -367,6 +367,13 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - Review disk growth and retention health regularly.
 - Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
 
+
+
+### VM disk panel cleanup (48.13.5-r2)
+
+- Top VM retains the total `ALLOCATED / ASSIGNED` capacity meter with independent `ALLOC`, `ASSIGNED`, and `%` sorting.
+- VM Overview retains one compact total VM Disk capacity card.
+- `Virtual Disk I/O` contains only one clean panel per customer disk and no repeated total strip.
 
 ### Filesystem-root and capacity-bar fixes (48.13.5)
 
