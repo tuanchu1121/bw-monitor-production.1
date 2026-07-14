@@ -1,8 +1,8 @@
-# BW Monitor v48.13.4 Storage Precision Production
+# BW Monitor v48.13.5 Storage Root Bars Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor 48.13.4-prod-r1-storage-precision**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor 48.13.5-prod-r1-storage-root-bars**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -338,7 +338,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.4-prod-r1`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.5-prod-r1`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
@@ -366,6 +366,14 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - Keep Agent `/push` tokens separate from scoped REST API keys.
 - Review disk growth and retention health regularly.
 - Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
+
+
+### Filesystem-root and capacity-bar fixes (48.13.5)
+
+- Agent v12 merges `df -P` and `findmnt` instead of treating either command as all-or-nothing. This keeps a separate LVM `/home` visible on AlmaLinux nodes.
+- Only real filesystem roots are shown. Service-sandbox aliases such as `/etc`, `/usr`, `/tmp`, `/var/lib/bw-agent`, and `/var/tmp` are collapsed into `/`.
+- Top VM and VM Overview use RAM-style Allocated / Assigned capacity bars.
+- VM detail and Storage I/O keep every customer disk separate with Read/Write and IOPS.
 
 ### Storage precision fixes (48.13.4)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bw-agent v11 daemon (per-disk storage I/O + monitor-synchronized abuse)
+bw-agent v12 daemon (per-disk storage I/O + monitor-synchronized abuse)
 
 Collects:
   1) VM/tap network traffic from libvirt domiflist + /sys/class/net/<tap>/statistics
@@ -70,7 +70,7 @@ STALE_IFACE_SECONDS = max(120, int(os.environ.get("BW_AGENT_STALE_IFACE_SECONDS"
 RUNTIME = os.environ.get("BW_AGENT_RUNTIME", "/var/lib/bw-agent/runtime.json")
 QUIET = os.environ.get("BW_AGENT_QUIET", "0") == "1"
 
-AGENT_VERSION = 11
+AGENT_VERSION = 12
 STOP_EVENT = threading.Event()
 
 
@@ -611,106 +611,206 @@ def _walk_findmnt_rows(items):
         yield from _walk_findmnt_rows(item.get("children") or [])
 
 
-def collect_filesystems():
-    """Collect every real mounted filesystem, including nested `/home` mounts.
+def _filesystem_mount_allowed(mount):
+    mount = str(mount or "").strip()
+    if not mount or mount == "-":
+        return False
+    if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+        return False
+    return True
 
-    Prefer a flat findmnt JSON list and retain MAJ:MIN so device-mapper, LVM,
-    mdraid, partitions and long `/dev/mapper/*` names can be resolved back to
-    the correct kernel block counter.  Fall back to recursive JSON and then
-    POSIX df when needed.
+
+def _statvfs_capacity(mount):
+    try:
+        st = os.statvfs(mount)
+        unit = safe_int(getattr(st, "f_frsize", 0), 0) or safe_int(getattr(st, "f_bsize", 0), 0)
+        size = max(0, unit * safe_int(st.f_blocks, 0))
+        avail = max(0, unit * safe_int(st.f_bavail, 0))
+        free = max(0, unit * safe_int(st.f_bfree, 0))
+        used = max(0, size - free)
+        pct = (used * 100.0 / size) if size > 0 else 0.0
+        return size, used, avail, pct
+    except Exception:
+        return 0, 0, 0, 0.0
+
+
+def _mount_maj_min(mount):
+    try:
+        st = os.stat(mount)
+        return "%s:%s" % (os.major(st.st_dev), os.minor(st.st_dev))
+    except Exception:
+        return ""
+
+
+def _collect_df_filesystems():
+    """Capacity source of truth.
+
+    `df -P` is intentionally collected even when findmnt works.  This avoids a
+    util-linux compatibility trap where an older findmnt rejects SIZE/USED
+    columns and a separate LVM `/home` silently disappears from the payload.
     """
-    rows = []
-    seen_mounts = set()
-    ignored_fs = {
-        "tmpfs", "devtmpfs", "squashfs", "overlay", "tracefs", "debugfs",
-        "securityfs", "pstore", "efivarfs", "cgroup", "cgroup2", "proc", "sysfs",
-    }
-
-    for findmnt_args in (
-        ["findmnt", "--list", "--json", "--bytes", "--real", "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET,MAJ:MIN"],
-        ["findmnt", "--json", "--bytes", "--real", "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET,MAJ:MIN"],
-    ):
-        try:
-            raw = run(findmnt_args, timeout=20)
-            payload = json.loads(raw or "{}")
-            rows = []
-            seen_mounts = set()
-            for item in _walk_findmnt_rows(payload.get("filesystems") or []):
-                mount = str(item.get("target") or "").strip()
-                if not mount or mount in seen_mounts:
-                    continue
-                if mount.startswith(("/run", "/sys", "/proc", "/dev")):
-                    continue
-                try:
-                    if not Path(mount).is_dir():
-                        continue
-                except Exception:
-                    pass
-                source = str(item.get("source") or "").strip()
-                fstype = str(item.get("fstype") or "").strip()
-                if fstype in ignored_fs:
-                    continue
-                rows.append({
-                    "device": source,
-                    "maj_min": str(item.get("maj:min") or item.get("maj_min") or "").strip(),
-                    "fstype": fstype,
-                    "mount": mount,
-                    "size": safe_int(item.get("size"), 0),
-                    "used": safe_int(item.get("used"), 0),
-                    "avail": safe_int(item.get("avail"), 0),
-                    "use_percent": safe_float(str(item.get("use%") or item.get("use_percent") or "0").strip().rstrip("%"), 0.0),
-                })
-                seen_mounts.add(mount)
-            if rows:
-                rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
-                return rows
-        except Exception:
-            continue
-
     try:
         out = run([
             "df", "-P", "-T", "-B1",
             "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay",
         ], timeout=20)
     except Exception:
-        return []
+        return {}
 
-    rows = []
-    seen_mounts = set()
-    for line in out.splitlines()[1:]:
-        parts = line.split()
+    result = {}
+    for raw in out.splitlines()[1:]:
+        parts = raw.split(None, 6)
         if len(parts) < 7:
             continue
-        device, fstype = parts[0], parts[1]
-        size, used, avail = safe_int(parts[2]), safe_int(parts[3]), safe_int(parts[4])
-        pct, mount = parts[5], parts[6]
-        if mount in seen_mounts or mount.startswith(("/run", "/sys", "/proc", "/dev")):
+        device, fstype, size_s, used_s, avail_s, pct_s, mount = parts
+        mount = str(mount or "").strip()
+        if not _filesystem_mount_allowed(mount):
             continue
-        try:
-            if not Path(mount).is_dir():
-                continue
-        except Exception:
-            pass
-        maj_min = ""
-        try:
-            st = os.stat(mount)
-            maj_min = "%s:%s" % (os.major(st.st_dev), os.minor(st.st_dev))
-        except Exception:
-            pass
-        rows.append({
-            "device": device,
-            "maj_min": maj_min,
-            "fstype": fstype,
+        result[mount] = {
+            "device": str(device or "").strip(),
+            "maj_min": _mount_maj_min(mount),
+            "fstype": str(fstype or "").strip(),
             "mount": mount,
-            "size": size,
-            "used": used,
-            "avail": avail,
-            "use_percent": safe_float(pct.strip("%"), 0.0),
-        })
-        seen_mounts.add(mount)
-    rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
-    return rows
+            "size": max(0, safe_int(size_s, 0)),
+            "used": max(0, safe_int(used_s, 0)),
+            "avail": max(0, safe_int(avail_s, 0)),
+            "use_percent": max(0.0, safe_float(str(pct_s).rstrip("%"), 0.0)),
+            "fsroot": "/",
+            "submount": False,
+        }
+    return result
 
+
+def _collect_findmnt_metadata():
+    """Return mount metadata without depending on optional capacity columns."""
+    ignored_fs = {
+        "tmpfs", "devtmpfs", "squashfs", "overlay", "tracefs", "debugfs",
+        "securityfs", "pstore", "efivarfs", "cgroup", "cgroup2", "proc", "sysfs",
+    }
+    commands = (
+        ["findmnt", "--list", "--json", "--real", "--output", "SOURCE,FSTYPE,TARGET,MAJ:MIN,FSROOT"],
+        ["findmnt", "--json", "--real", "--output", "SOURCE,FSTYPE,TARGET,MAJ:MIN,FSROOT"],
+        ["findmnt", "--list", "--json", "--real", "--output", "SOURCE,FSTYPE,TARGET,MAJ:MIN"],
+        ["findmnt", "--json", "--real", "--output", "SOURCE,FSTYPE,TARGET,MAJ:MIN"],
+    )
+    for args in commands:
+        try:
+            payload = json.loads(run(args, timeout=20) or "{}")
+        except Exception:
+            continue
+        result = {}
+        for item in _walk_findmnt_rows(payload.get("filesystems") or []):
+            mount = str(item.get("target") or "").strip()
+            if not _filesystem_mount_allowed(mount):
+                continue
+            source = str(item.get("source") or "").strip()
+            fstype = str(item.get("fstype") or "").strip()
+            if fstype in ignored_fs:
+                continue
+            fsroot = str(item.get("fsroot") or "/").strip() or "/"
+            # systemd service sandboxes expose bind aliases such as
+            # /dev/md126[/etc] -> /etc.  They are not independent filesystems
+            # and must not appear as separate node storage rows.
+            submount = fsroot != "/" or ("[" in source and source.endswith("]"))
+            base_source = source.split("[", 1)[0] if "[" in source else source
+            result[mount] = {
+                "device": base_source,
+                "maj_min": str(item.get("maj:min") or item.get("maj_min") or "").strip(),
+                "fstype": fstype,
+                "mount": mount,
+                "fsroot": fsroot,
+                "submount": bool(submount),
+            }
+        if result:
+            return result
+    return {}
+
+
+def _filesystem_identity(row):
+    maj_min = str(row.get("maj_min") or "").strip()
+    if maj_min:
+        return "maj:" + maj_min
+    device = str(row.get("device") or "").strip()
+    if "[" in device:
+        device = device.split("[", 1)[0]
+    if device.startswith("/dev/"):
+        try:
+            device = os.path.realpath(device)
+        except Exception:
+            pass
+    return "dev:" + device if device else "mount:" + str(row.get("mount") or "")
+
+
+def _dedupe_filesystem_roots(rows):
+    """Keep one real mount root per underlying filesystem.
+
+    The agent runs inside a hardened systemd namespace.  `/etc`, `/usr`,
+    `/tmp`, `/var/lib/bw-agent`, and similar paths may therefore appear as bind
+    aliases of `/`.  They share the same MAJ:MIN and are deliberately collapsed
+    to the shortest real mount, while a separate LVM `/home` remains because it
+    has its own MAJ:MIN.
+    """
+    chosen = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        mount = str(row.get("mount") or "").rstrip("/") or "/"
+        row["mount"] = mount
+        if not _filesystem_mount_allowed(mount):
+            continue
+        if row.get("submount"):
+            continue
+        key = _filesystem_identity(row)
+        old = chosen.get(key)
+        rank = (0 if mount == "/" else 1, mount.count("/"), len(mount), mount)
+        if old is None:
+            chosen[key] = (rank, row)
+            continue
+        if rank < old[0]:
+            chosen[key] = (rank, row)
+    result = [item[1] for item in chosen.values()]
+    result.sort(key=lambda x: (0 if x.get("mount") == "/" else 1, len(str(x.get("mount") or "")), str(x.get("mount") or "")))
+    for row in result:
+        row.pop("fsroot", None)
+        row.pop("submount", None)
+    return result
+
+
+def collect_filesystems():
+    """Collect only real filesystem roots and never lose a separate `/home`.
+
+    Capacity comes from `df -P`; findmnt enriches SOURCE/FSTYPE/MAJ:MIN.  Both
+    sources are merged instead of treating either one as an all-or-nothing
+    result.  This works on older AlmaLinux util-linux builds, LVM/device-mapper,
+    mdraid, and long mapper names.
+    """
+    df_rows = _collect_df_filesystems()
+    findmnt_rows = _collect_findmnt_metadata()
+    mounts = set(df_rows) | set(findmnt_rows)
+    merged = []
+    for mount in mounts:
+        base = dict(df_rows.get(mount) or {})
+        meta = dict(findmnt_rows.get(mount) or {})
+        if not base:
+            size, used, avail, pct = _statvfs_capacity(mount)
+            base = {
+                "mount": mount, "size": size, "used": used,
+                "avail": avail, "use_percent": pct,
+            }
+        # Prefer findmnt's canonical block source and MAJ:MIN, but never blank
+        # a working df value when an older findmnt omits a field.
+        for key in ("device", "maj_min", "fstype", "fsroot", "submount"):
+            value = meta.get(key)
+            if value not in (None, ""):
+                base[key] = value
+        base.setdefault("device", "")
+        base.setdefault("maj_min", _mount_maj_min(mount))
+        base.setdefault("fstype", "")
+        base.setdefault("fsroot", "/")
+        base.setdefault("submount", False)
+        base["mount"] = mount
+        merged.append(base)
+    return _dedupe_filesystem_roots(merged)
 
 def device_to_block_name(device, maj_min=""):
     """Resolve a mounted source to the kernel block name used by sysfs.

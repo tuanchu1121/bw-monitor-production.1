@@ -1,0 +1,18 @@
+BW Monitor 48.13.5-prod-r1-storage-root-bars
+
+Scope
+- Preserve the v48.12.9-r4 operational UI and all existing network/CPU/RAM/Abuse logic.
+- Fix real filesystem discovery and make disk capacity visible in the same visual language as RAM.
+
+Changes
+1. Agent v12 always merges df capacity with findmnt metadata. Separate LVM/device-mapper /home mounts are retained even when older findmnt builds reject optional capacity columns.
+2. Systemd sandbox bind aliases are filtered by FSROOT/source suffix and underlying MAJ:MIN identity. /etc, /usr, /tmp, /var/lib/bw-agent and /var/tmp no longer appear as storage backends.
+3. Top VM shows total Host Allocated / Assigned across customer disks, with a visible meter and Allocated/Assigned/% sorting.
+4. VM Overview shows one total VM Disk capacity meter; the Virtual Disk I/O section below keeps separate vda/vdb panels with capacity, source, mount, device, Read/Write and IOPS.
+5. Node Filesystems shows Used / Size as a capacity meter and only real filesystem roots.
+6. Storage I/O VM Disks renders one customer disk per visually distinct sortable row.
+7. Exact UUID purge remains scoped to the selected UUID and preserves unrelated Current Abuse and Abuse Events.
+
+Deployment
+- Update Monitor with update.sh --backup-db.
+- Update every Agent because the /home and bind-alias fixes are in Agent v12.

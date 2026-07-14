@@ -1,4 +1,4 @@
-BW Monitor 48.13.4-prod-r1-storage-precision
+BW Monitor 48.13.5-prod-r1-storage-root-bars
 ================================================
 
 Scope
@@ -64,6 +64,6 @@ Agent v11, while the UI, cleanup and migration fixes are in the Monitor.
 Validation
 ----------
 - All legacy v48.10.0 through v48.12.9-r4 regression suites pass.
-- v48.13.4 storage-precision regression passes.
+- v48.13.5 storage-root-bars regression passes.
 - Python syntax, shell syntax, installer-flow checks, YAML validation and
   checksum verification pass in the release audit.

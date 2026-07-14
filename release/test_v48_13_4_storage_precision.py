@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression coverage for v48.13.4 storage precision.
+"""Regression coverage for v48.13.5 filesystem-root precision and capacity bars.
 
 Checks:
 - per-disk Agent payload and robust /home mount discovery;
@@ -65,19 +65,43 @@ def main():
     source = app_path.read_text(encoding="utf-8")
     agent_source = agent_path.read_text(encoding="utf-8")
 
-    check('V48134_VERSION = "48.13.4"' in source, "v48.13.4 marker is missing")
+    check('V48135_VERSION = "48.13.5"' in source, "v48.13.5 marker is missing")
     check('disk-capacity-sort-head' in source and 'diskallocated' in source and 'diskassigned' in source, "Top VM disk capacity sorting is missing")
-    check('Virtual Disk I/O' in source and 'vm-overview-disk-stat' in source, "VM detail per-disk UI is missing")
-    check('Storage Node' in source and 'storage-disk-detail-table' in source and 'storage-one-disk' in source, "one-row-per-disk Storage I/O UI is missing")
+    check('Virtual Disk I/O' in source and 'vm-disk-total-overview' in source, "VM total capacity/per-disk detail UI is missing")
+    check('Storage Node' in source and 'storage-disk-detail-table' in source and 'storage-single-disk-row' in source, "one-row-per-disk Storage I/O UI is missing")
     check('Search node, IP, UUID, disk, path or mount' in source, "Storage I/O search bar is missing")
     check('def purge_vm_data(conn, node, vm_uuid' in source and 'DELETE FROM {table} WHERE vm_uuid=?' in source, "exact UUID purge override is missing")
     check("NOT IN ('cycles-v2','cycles-v3','cycles-v3-ram')" in source, "app import can still reset current abuse for the final engine")
     check('All status' in source and 'Active' in source and 'Hidden' in source and 'Stale' in source, "Admin status filters are missing")
-    check('AGENT_VERSION = 11' in agent_source, "Agent v11 marker is missing")
+    check('AGENT_VERSION = 12' in agent_source, "Agent v12 marker is missing")
     check('"virsh", "domstats", "--list-active", "--vcpu", "--balloon", "--block"' in agent_source, "Agent no longer uses one bulk domstats call")
-    check('"findmnt", "--json", "--bytes", "--real"' in agent_source, "Agent does not use robust findmnt mount discovery")
+    check('_collect_df_filesystems' in agent_source and '_collect_findmnt_metadata' in agent_source and '_dedupe_filesystem_roots' in agent_source, "Agent does not merge df/findmnt or dedupe filesystem roots")
     check('Do not require SOURCE to start with /dev/' in agent_source, "mount mapping still rejects non-/dev storage sources")
     check('"disks": disks' in agent_source and '"storage_devices": storage_devices' in agent_source, "Agent per-disk/storage payload is incomplete")
+
+    # Agent mount inventory: a separate LVM /home must survive while
+    # systemd bind aliases of / are collapsed.
+    agent_spec = importlib.util.spec_from_file_location("bw_storage_test_agent", agent_path)
+    agent_mod = importlib.util.module_from_spec(agent_spec)
+    agent_spec.loader.exec_module(agent_mod)
+    old_df = agent_mod._collect_df_filesystems
+    old_findmnt = agent_mod._collect_findmnt_metadata
+    try:
+        agent_mod._collect_df_filesystems = lambda: {
+            "/": {"device":"/dev/md125","maj_min":"9:125","fstype":"xfs","mount":"/","size":160,"used":10,"avail":150,"use_percent":6,"fsroot":"/","submount":False},
+            "/home": {"device":"/dev/mapper/almalinux-home","maj_min":"253:0","fstype":"xfs","mount":"/home","size":11000,"used":6800,"avail":3800,"use_percent":65,"fsroot":"/","submount":False},
+            "/etc": {"device":"/dev/md125","maj_min":"9:125","fstype":"xfs","mount":"/etc","size":160,"used":10,"avail":150,"use_percent":6,"fsroot":"/etc","submount":True},
+        }
+        agent_mod._collect_findmnt_metadata = lambda: {
+            "/": {"device":"/dev/md125","maj_min":"9:125","fstype":"xfs","mount":"/","fsroot":"/","submount":False},
+            "/home": {"device":"/dev/mapper/almalinux-home","maj_min":"253:0","fstype":"xfs","mount":"/home","fsroot":"/","submount":False},
+            "/etc": {"device":"/dev/md125","maj_min":"9:125","fstype":"xfs","mount":"/etc","fsroot":"/etc","submount":True},
+        }
+        mounts = {row["mount"] for row in agent_mod.collect_filesystems()}
+        check(mounts == {"/", "/home"}, f"Agent real filesystem filtering is wrong: {mounts}")
+    finally:
+        agent_mod._collect_df_filesystems = old_df
+        agent_mod._collect_findmnt_metadata = old_findmnt
 
     with tempfile.TemporaryDirectory(prefix="bw-storage-test-") as td:
         db_path = str(Path(td) / "bandwidth.db")
@@ -154,8 +178,9 @@ def main():
             check(rows and rows[0][1] == vm_uuid, "Top VM disk allocated sort is wrong")
             top_html = mod.top_vm_table(rows, "5m", "", "diskallocated", "desc", "all", 100)
         check(top_html.count("ram-compact-sort-head") == 1, "Top VM RAM column was changed")
-        check(top_html.count("disk-capacity-sort-head") == 1, "Top VM must have one disk capacity column")
-        check(top_html.index("ram-compact-sort-head") < top_html.index("disk-capacity-sort-head") < top_html.index("DISK R/s"), "disk capacity column is not between RAM and Disk R/s")
+        check(top_html.count("<th class=\"num-head disk-capacity-sort-head\">") == 1, "Top VM must have one disk capacity column")
+        check("v48135-top-disk-meter-fix" in top_html and ".disk-cap-meter i" in top_html, "Top VM disk capacity meter CSS is missing")
+        check(top_html.index("<th class=\"num-head ram-compact-sort-head\">") < top_html.index("<th class=\"num-head disk-capacity-sort-head\">") < top_html.index("DISK R/s"), "disk capacity column is not between RAM and Disk R/s")
         check("ALLOCATED / ASSIGNED" in top_html and "ALLOC" in top_html and "ASSIGNED" in top_html, "Top VM disk capacity header is incomplete")
         check('col class="top-rank"' in top_html and 'col class="top-ifaces"' in top_html, "Top VM width controls are missing")
         check("/vm?" in top_html, "Top VM UUID does not open VM detail")
@@ -163,7 +188,7 @@ def main():
         # VM detail: capacity cards are in Overview and I/O table is between Overview and charts.
         with mod.app.test_request_context(f"/vm?node={node}&vm_uuid={vm_uuid}&period=1h"):
             vm_html = response_html(mod.app.view_functions["vm_page"]())
-        check("DISK vda" in vm_html and "DISK vdb" in vm_html, "VM Overview does not show each disk capacity")
+        check("VM DISK" in vm_html and "vm-disk-total-overview" in vm_html, "VM Overview does not show total allocated / assigned capacity")
         check("Virtual Disk I/O" in vm_html and "READ IOPS" in vm_html and "WRITE IOPS" in vm_html, "VM per-disk I/O table is missing")
         check(vm_html.index("Overview") < vm_html.index("Virtual Disk I/O") < vm_html.index("Average Mbps"), "VM disk detail is not between Overview and charts")
         check("cloud-drive.img" not in vm_html, "auxiliary cloud disk leaked into VM customer disk detail")
@@ -174,7 +199,7 @@ def main():
         check("Search node, IP, UUID, disk, path or mount" in disk_html, "Storage search field is missing")
         check("167.253.159.3" in disk_html and 'data-copy="167.253.159.3"' in disk_html, "node IP/copy is missing")
         check(vm_uuid in disk_html and f'data-copy="{vm_uuid}"' in disk_html, "UUID/copy is missing")
-        check(disk_html.count("storage-one-disk") >= 2 and "vda" in disk_html and "vdb" in disk_html, "VM disks are not rendered as separate rows")
+        check(disk_html.count("storage-single-disk-row") >= 2 and "vda" in disk_html and "vdb" in disk_html, "VM disks are not rendered as separate rows")
         check(disk_html.count(vm_uuid) >= 2, "UUID is not visible on every per-disk row")
         check("cloud-drive.img" not in disk_html, "auxiliary disk leaked into grouped VM disks")
 
@@ -202,6 +227,10 @@ def main():
         fs_by_mount = {r[0]: r for r in fs_rows}
         check(float(fs_by_mount["/home"][8] or 0) > 0 and float(fs_by_mount["/home"][11] or 0) > 0, "Node Filesystems did not overlay current /home Read/IOPS")
         check(float(fs_by_mount["/home2"][9] or 0) > 0 and float(fs_by_mount["/home2"][12] or 0) > 0, "Node Filesystems did not overlay current /home2 Write/IOPS")
+        with mod.app.test_request_context("/node/x?period=5m"):
+            fs_html = mod.node_filesystem_table(fs_rows + [("/etc", "/dev/sda2[/etc]", "xfs", 160*1024**3, 20*1024**3, 140*1024**3, 12.5, now, 1, 2, 3, 4, 5, now)])
+        check("USED / SIZE" in fs_html and "disk-capacity" in fs_html, "Node Filesystems does not use a RAM-like Used / Size bar")
+        check("/etc" not in fs_html, "Node Filesystems still shows service-sandbox bind aliases")
 
         # Exact UUID purge: target disappears everywhere, unrelated Current Abuse
         # and Abuse Events remain untouched, node storage remains.
@@ -229,7 +258,7 @@ def main():
         finally:
             conn.close()
 
-    print("PASS: v48.13.4 exact UUID purge, abuse preservation, Top VM capacity, VM disk detail, per-disk Storage I/O, admin filters and separate /home mounts")
+    print("PASS: v48.13.5 filesystem-root precision, exact UUID purge, visible capacity bars, VM total/per-disk detail and separate /home mounts")
     return 0
 
 

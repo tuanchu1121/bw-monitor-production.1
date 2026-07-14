@@ -1,6 +1,6 @@
 # Changelog
 
-## 48.13.4-prod-r1-storage-precision
+## 48.13.5-prod-r1-storage-root-bars
 
 - Fixed the maintenance-import migration bug that cleared every VM's Current Abuse when one UUID purge job started. Purging one UUID now removes only that UUID while unrelated Current Abuse and Abuse Events remain visible immediately.
 - Purge-by-UUID removes all copies of that UUID from VM-scoped current caches, 5-minute/history tables, inventory, disk current data and Abuse history without deleting node storage metrics.
