@@ -45,6 +45,10 @@ def main():
     check('"virsh", "domstats", "--list-active", "--vcpu", "--balloon", "--block"' in agent_source, "Agent no longer uses one bulk domstats call")
     check('"disks": disks' in agent_source, "Agent does not send per-disk payloads")
     check('"storage_devices": storage_devices' in agent_source, "Agent does not send node storage payloads")
+    check('Node Filesystems' in source and '<th>R IOPS</th>' in source and '<th>W IOPS</th>' in source, "Node Filesystems per-mount IOPS columns are missing")
+    check('LEFT JOIN node_storage_current s' in source, "Node Filesystems is not joined to latest per-mount storage I/O")
+    for table in ("vm_iface_current", "vm_current_fast", "vm_abuse_state", "vm_abuse_events", "vm_abuse_incidents"):
+        check(f'"{table}"' in source, f"UUID purge list does not include {table}")
 
     with tempfile.TemporaryDirectory(prefix="bw-storage-test-") as td:
         db_path = str(Path(td) / "bandwidth.db")
@@ -171,12 +175,24 @@ def main():
         check("hardware/unknown RAID" in html, "unknown hardware RAID label is missing")
         check("VM DISKS" in html and "UTIL" in html, "backend operational columns are missing")
 
-        # UUID purge removes only VM disk rows. Node storage remains intact.
+        # UUID purge removes all VM-scoped current/cache/Abuse rows while
+        # preserving node storage. This prevents 5m/search and Abuse Events
+        # ghost rows after a destructive VM purge.
         conn = mod.db()
         try:
-            mod.purge_vm_data(conn, "UT-Storage-1", "8510ddeb-df0b-4f14-a074-d13cdac1d9e2")
+            vm_uuid = "8510ddeb-df0b-4f14-a074-d13cdac1d9e2"
+            node = "UT-Storage-1"
+            conn.execute("INSERT INTO vm_iface_current(node,vm_uuid,bridge,iface,last_seen) VALUES(?,?,?,?,?)", (node,vm_uuid,"br0","tap-test",now))
+            conn.execute("INSERT INTO vm_current_fast(node,vm_uuid,last_seen) VALUES(?,?,?)", (node,vm_uuid,now))
+            conn.execute("INSERT INTO vm_abuse_state(node,vm_uuid,last_seen) VALUES(?,?,?)", (node,vm_uuid,now))
+            conn.execute("INSERT INTO vm_abuse_events(event_time,event_type,node,vm_uuid) VALUES(?,?,?,?)", (now,"started",node,vm_uuid))
+            conn.execute("INSERT INTO vm_abuse_incidents(node,vm_uuid,started_at,last_event_at) VALUES(?,?,?,?)", (node,vm_uuid,now,now))
             conn.commit()
-            check(conn.execute("SELECT COUNT(*) FROM vm_disk_current").fetchone()[0] == 0, "UUID purge left VM disk rows")
+
+            mod.purge_vm_data(conn, node, vm_uuid)
+            conn.commit()
+            for table in ("vm_disk_current", "vm_iface_current", "vm_current_fast", "vm_abuse_state", "vm_abuse_events", "vm_abuse_incidents"):
+                check(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE node=? AND vm_uuid=?", (node,vm_uuid)).fetchone()[0] == 0, f"UUID purge left {table} rows")
             check(conn.execute("SELECT COUNT(*) FROM node_storage_current").fetchone()[0] == 2, "UUID purge incorrectly deleted node storage rows")
         finally:
             conn.close()

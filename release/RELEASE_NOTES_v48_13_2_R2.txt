@@ -1,0 +1,10 @@
+BW Monitor 48.13.2-prod-r2-disk-only
+
+Scope: preserve the original v48.12.9-r4 UI/logic and extend only disk visibility and VM purge correctness.
+
+Changes:
+- Node Filesystems now shows per-mount Read, Write, Read IOPS, Write IOPS and Util from the latest physical block-device sample.
+- VM purge removes vm_iface_current, vm_current_fast, vm_abuse_state, vm_abuse_events and vm_abuse_incidents in addition to the existing VM history/current rows.
+- Purge all VMs under a node performs the same current-cache and Abuse cleanup while preserving node host/filesystem/storage metrics.
+- Dashboard/Top VM 5m ghost entries and Abuse Events remnants are removed when the purge job commits.
+- No Dashboard, Top VM, VM Abuse, Node Health or Admin renderer was replaced.

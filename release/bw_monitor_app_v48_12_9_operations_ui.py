@@ -7864,6 +7864,11 @@ def get_node_host_period(node, period):
 def get_node_filesystems_snapshot(node, period):
     conn = db()
     try:
+        # Keep the original retained filesystem snapshot semantics for capacity,
+        # then enrich each mount with the latest physical block I/O sample. This
+        # does not change Node Health/Top VM history and avoids duplicating a
+        # high-volume per-filesystem I/O history table.
+        ensure_disk_io_schema(conn)
         selected_bucket, _latest_bucket = resolve_snapshot_bucket(conn, period, node=node)
         if not selected_bucket:
             return []
@@ -7879,10 +7884,17 @@ def get_node_filesystems_snapshot(node, period):
         if not snapshot_time:
             return []
         return conn.execute("""
-            SELECT mount, device, fstype, size, used, avail, use_percent, last_push
-            FROM node_filesystem_stats
-            WHERE node=? AND time=?
-            ORDER BY use_percent DESC, mount COLLATE NOCASE ASC
+            SELECT
+                f.mount, f.device, f.fstype, f.size, f.used, f.avail,
+                f.use_percent, f.last_push,
+                COALESCE(s.read_bps, 0), COALESCE(s.write_bps, 0),
+                COALESCE(s.read_iops, 0), COALESCE(s.write_iops, 0),
+                COALESCE(s.util_percent, 0), COALESCE(s.last_seen, 0)
+            FROM node_filesystem_stats f
+            LEFT JOIN node_storage_current s
+              ON s.node=f.node AND s.mount=f.mount
+            WHERE f.node=? AND f.time=?
+            ORDER BY f.use_percent DESC, f.mount COLLATE NOCASE ASC
         """, (node, snapshot_time)).fetchall()
     finally:
         conn.close()
@@ -8036,9 +8048,20 @@ def node_host_cards(row, period):
 
 def node_filesystem_table(rows):
     body = ""
-    for mount, device, fstype, size, used, avail, use_percent, last_seen in rows:
+    for (
+        mount, device, fstype, size, used, avail, use_percent, fs_last_seen,
+        read_bps, write_bps, read_iops, write_iops, util_percent, io_last_seen,
+    ) in rows:
         pct = float(use_percent or 0)
         cls = "warn" if pct >= 85 else ""
+        io_seen = int(io_last_seen or 0)
+        io_missing = io_seen <= 0
+        read_html = "-" if io_missing else human_rate(read_bps)
+        write_html = "-" if io_missing else human_rate(write_bps)
+        read_iops_html = "-" if io_missing else f"{float(read_iops or 0):,.1f}"
+        write_iops_html = "-" if io_missing else f"{float(write_iops or 0):,.1f}"
+        util_html = "-" if io_missing else f"{float(util_percent or 0):.1f}%"
+        last_seen = max(int(fs_last_seen or 0), io_seen)
         body += f"""
         <tr class="{cls}">
             <td class="mono">{escape(mount or '-')}</td>
@@ -8048,15 +8071,26 @@ def node_filesystem_table(rows):
             <td><b>{human(used)}</b></td>
             <td>{human(avail)}</td>
             <td><b>{pct:.1f}%</b></td>
+            <td class="num">{read_html}</td>
+            <td class="num"><b>{write_html}</b></td>
+            <td class="num">{read_iops_html}</td>
+            <td class="num"><b>{write_iops_html}</b></td>
+            <td class="num"><b>{util_html}</b></td>
             <td>{fmt_push(last_seen)}</td>
         </tr>
         """
     if not body:
-        body = '<tr><td colspan="8" class="empty">No filesystem data yet</td></tr>'
+        body = '<tr><td colspan="13" class="empty">No filesystem data yet</td></tr>'
     return f"""
     <div class="card">
-        <h3>Node Filesystems</h3>
-        <table>
+        <div class="table-title-row">
+            <div>
+                <h3>Node Filesystems</h3>
+                <div class="table-hint">Capacity follows the selected node snapshot. Read/Write, IOPS and Util are the latest physical block-device sample for each mount.</div>
+            </div>
+        </div>
+        <div class="table-wrap">
+        <table class="node-filesystem-io-table">
             <thead>
                 <tr>
                     <th>Mount</th>
@@ -8066,11 +8100,17 @@ def node_filesystem_table(rows):
                     <th>Used</th>
                     <th>Avail</th>
                     <th>Use%</th>
+                    <th>Read</th>
+                    <th>Write</th>
+                    <th>R IOPS</th>
+                    <th>W IOPS</th>
+                    <th>Util</th>
                     <th>Last</th>
                 </tr>
             </thead>
             <tbody>{body}</tbody>
         </table>
+        </div>
     </div>
     """
 
@@ -9361,8 +9401,27 @@ def _refresh_node_snapshot_vm_counts(conn, node):
 
 
 def purge_vm_data(conn, node, vm_uuid, refresh_snapshots=True):
-    """Permanently delete one VM on one node and preserve all node-level data."""
+    """Permanently delete one VM on one node and preserve all node-level data.
+
+    Purge means no ghost row may remain in Dashboard/Top VM 5m caches or in
+    Current Abuse/Abuse Events. Every VM-scoped table is therefore cleared by
+    the same (node, UUID) key before location and node snapshot counts are
+    repaired.
+    """
     deleted = {}
+
+    # Fast/current state first so the VM disappears from live pages as soon as
+    # this transaction commits, even when historical tables are large.
+    for table in (
+        "vm_iface_current",
+        "vm_current_fast",
+        "vm_abuse_state",
+        "vm_abuse_events",
+        "vm_abuse_incidents",
+    ):
+        deleted[table] = _delete_count(
+            conn, f"DELETE FROM {table} WHERE node=? AND vm_uuid=?", (node, vm_uuid)
+        )
 
     deleted["usage"] = _delete_count(
         conn,
@@ -9436,6 +9495,17 @@ def purge_all_vms_for_node(conn, node):
     """
     vm_uuids = _collect_node_vm_uuids(conn, node)
     deleted = {}
+
+    # Remove all VM-scoped current caches and Abuse history for this node.
+    # Node host/filesystem/storage metrics remain intact by design.
+    for table in (
+        "vm_iface_current",
+        "vm_current_fast",
+        "vm_abuse_state",
+        "vm_abuse_events",
+        "vm_abuse_incidents",
+    ):
+        deleted[table] = _delete_count(conn, f"DELETE FROM {table} WHERE node=?", (node,))
 
     # VM network/performance history and latest caches.
     deleted["usage"] = _delete_count(
@@ -23783,7 +23853,7 @@ def page(title, content):
     response = _page_v48129_base(title, content)
     try:
         html = response.get_data(as_text=True)
-        html = html.replace("</head>", V48129_UI_CSS + "</head>", 1)
+        html = html.replace("</head>", V48129_UI_CSS + NODE_FILESYSTEM_IO_CSS + "</head>", 1)
         response.set_data(html)
     except Exception:
         app.logger.exception("Could not apply v48.12.9 operations Abuse UI")
@@ -23793,6 +23863,13 @@ def page(title, content):
 # v48.13.2 disk-only extension
 # Original Dashboard, Top VM, VM Abuse and Node Health renderers stay untouched.
 # ---------------------------------------------------------------------------
+
+NODE_FILESYSTEM_IO_CSS = r'''
+<style id="node-filesystem-io-v48132r2">
+.node-filesystem-io-table{min-width:1420px}.node-filesystem-io-table td.num,.node-filesystem-io-table th:nth-child(n+8){text-align:right;white-space:nowrap}
+</style>
+'''
+
 
 def ensure_disk_io_schema(conn):
     conn.executescript("""

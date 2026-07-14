@@ -369,3 +369,9 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 
 ### Storage I/O extension (48.13.2)
 This release keeps the original Dashboard, Top VM, VM Abuse and Node Health UI unchanged. The new **Storage I/O** tab provides per-VM-disk and per-node-storage current metrics with lookback filtering, search, sorting and pagination.
+
+
+### 48.13.2-prod-r2 disk-only fixes
+
+- Node Filesystems per-mount I/O: Read, Write, Read IOPS, Write IOPS and Util.
+- Purging a VM clears all node+UUID live caches and Abuse history, so no 5m/search ghost remains after the purge job completes.

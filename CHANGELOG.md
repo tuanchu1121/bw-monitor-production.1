@@ -1,5 +1,12 @@
 # Changelog
 
+## 48.13.2-prod-r2-disk-only
+
+- Added per-mount Read/Write, Read/Write IOPS and Util to the existing Node Filesystems table.
+- Fixed VM purge so live 5m caches, Current Abuse, raw Abuse events and grouped Abuse Events are removed by node + UUID.
+- Kept all original v48.12.9-r4 Dashboard, Top VM, VM Abuse, Node Health and Admin renderers unchanged.
+
+
 ## 48.12.9-r4-prod-r2
 
 - Fixed fresh domain installation health checks to wait for the actual HTTP endpoint instead of checking immediately after systemd becomes active.
