@@ -1,0 +1,6 @@
+BW Monitor 48.13.9-prod-r2-swap-top-slots
+
+- Adds active swap devices to Node Filesystems and Storage Node.
+- Swap capacity is read from /proc/swaps; block-backed swap also reports Read/Write, IOPS and Util from sysfs.
+- Adds SLOTS sorting to Top VM disk capacity, using the existing customer-disk count.
+- Keeps every other dashboard, Abuse, Storage, retention and cleanup behavior unchanged.

@@ -1,5 +1,12 @@
 ## 48.13.9-prod-r1-abuse-storage-cards
 
+## 48.13.9-prod-r2-swap-top-slots
+
+- Added active SWAP rows to node storage views.
+- Added Top VM `SLOTS` sorting beside `ALLOC · ASSIGNED · %`.
+- No policy, retention, purge or unrelated UI changes.
+
+
 - Added sortable `ALLOC · ASSIGNED · % · SLOTS` disk capacity to Current VM Abuse.
 - Reworked only grouped `VM Disks` and `Storage Node` cards into clear `Overall`, `Performance`, and separated child sections.
 - Kept filtered storage tables and unrelated monitoring logic unchanged.

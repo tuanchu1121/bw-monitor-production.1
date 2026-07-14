@@ -28,6 +28,7 @@ import ipaddress
 import copy
 import signal
 import threading
+import stat
 from pathlib import Path
 
 API = os.environ.get("BW_AGENT_API", "http://103.199.19.207:8080/push")
@@ -580,6 +581,55 @@ def parse_meminfo():
     return mem_total, mem_available, mem_used, swap_total, swap_used
 
 
+def _device_maj_min(device):
+    """Return kernel MAJ:MIN for a block device path."""
+    try:
+        st = os.stat(str(device or ""))
+        devno = st.st_rdev if stat.S_ISBLK(st.st_mode) else 0
+        if devno:
+            return f"{os.major(devno)}:{os.minor(devno)}"
+    except Exception:
+        pass
+    return ""
+
+
+def collect_swap_filesystems():
+    """Expose active swap devices as real node-storage rows.
+
+    Swap is not mounted, so neither df nor findmnt reports it as a filesystem.
+    /proc/swaps is the authoritative inventory.  Capacity values are converted
+    from KiB to bytes and block-backed swap keeps MAJ:MIN so sysfs I/O can be
+    sampled exactly like a mounted filesystem.
+    """
+    rows = []
+    try:
+        lines = Path("/proc/swaps").read_text(encoding="utf-8", errors="replace").splitlines()[1:]
+    except Exception:
+        lines = []
+    for index, raw in enumerate(lines, 1):
+        parts = raw.split()
+        if len(parts) < 4:
+            continue
+        source, swap_type, size_kib, used_kib = parts[:4]
+        size = max(0, safe_int(size_kib, 0)) * 1024
+        used = max(0, safe_int(used_kib, 0)) * 1024
+        avail = max(0, size - used)
+        mount = "SWAP" if index == 1 else f"SWAP {index}"
+        rows.append({
+            "device": source,
+            "maj_min": _device_maj_min(source) if swap_type == "partition" else "",
+            "fstype": "swap",
+            "mount": mount,
+            "size": size,
+            "used": used,
+            "avail": avail,
+            "use_percent": (used * 100.0 / size) if size > 0 else 0.0,
+            "fsroot": "/",
+            "submount": False,
+        })
+    return rows
+
+
 def parse_proc_stat_cpu():
     try:
         parts = Path("/proc/stat").read_text().splitlines()[0].split()
@@ -870,6 +920,9 @@ def collect_node_host(state, now_ts, interval):
     state["host:cpu"] = {"total": cpu_total, "idle": cpu_idle, "time": now_ts}
 
     filesystems = collect_filesystems()
+    # Swap is a real block-backed storage consumer but has no mountpoint, so
+    # add it explicitly after filesystem discovery.
+    filesystems.extend(collect_swap_filesystems())
     storage_devices = []
     total_read_delta = total_write_delta = 0
     total_read_ios_delta = total_write_ios_delta = 0

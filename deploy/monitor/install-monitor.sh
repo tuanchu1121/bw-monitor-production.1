@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="48.13.9-prod-r1-abuse-storage-cards"
+RELEASE="48.13.9-prod-r2-swap-top-slots"
 GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 GITHUB_REF="${BW_GITHUB_REF:-main}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

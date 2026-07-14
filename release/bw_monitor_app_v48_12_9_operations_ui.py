@@ -24482,7 +24482,7 @@ def _v48133_top_disk_capacity(allocated, assigned, count):
         f'<div class="top-disk-capacity{level}">'
         f'<b>{_disk_io_bytes(allocated)} <span>/ {_disk_io_bytes(assigned)}</span></b>'
         f'<div class="disk-cap-meter"><i style="width:{min(100.0, max(0.0, pct)):.1f}%"></i></div>'
-        f'<small>{pct:.1f}% · {count} disk{"s" if count != 1 else ""}</small>'
+        f'<small>{pct:.1f}% · {count} slot{"s" if count != 1 else ""}</small>'
         f'</div>'
     )
 
@@ -24575,6 +24575,8 @@ def top_vm_table(rows, period, q, sort_by, order, scope, limit):
         + _v48133_disk_sort_link("ASSIGNED", "diskassigned", period, q, sort_by, order, scope, limit)
         + '<span> · </span>'
         + _v48133_disk_sort_link("%", "diskallocpct", period, q, sort_by, order, scope, limit)
+        + '<span> · </span>'
+        + _v48133_disk_sort_link("SLOTS", "diskcount", period, q, sort_by, order, scope, limit)
         + '</small></div>'
     )
     return V48133_TOP_CSS + f"""
@@ -26744,7 +26746,7 @@ app.view_functions["storage_io_page"] = storage_io_page_v48138
 # v48.13.9 - compact Abuse disk capacity + clearer Storage cards
 # ---------------------------------------------------------------------------
 V48139_VERSION = "48.13.9"
-V48139_BUILD = "r1"
+V48139_BUILD = "r2"
 
 V48139_UI_CSS = r'''
 <style id="v48139-abuse-storage-cards">

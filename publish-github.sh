@@ -52,7 +52,7 @@ if ! git config user.email >/dev/null; then git config user.email "${GIT_AUTHOR_
 
 git add -A
 if ! git diff --cached --quiet; then
-  git commit -m "BW Monitor v48.13.9-r1 Abuse disk capacity and Storage cards"
+  git commit -m "BW Monitor v48.13.9-r2 active swap and Top VM slot sorting"
 fi
 
 if gh repo view "$REPO" >/dev/null 2>&1; then

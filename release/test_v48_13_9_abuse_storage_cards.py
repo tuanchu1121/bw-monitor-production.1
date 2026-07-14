@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused regression coverage for v48.13.9 Abuse disk capacity and Storage cards."""
+"""Focused regression coverage for v48.13.9-r2 Abuse disk capacity, Storage cards, Top VM slots and swap."""
 from __future__ import annotations
 
 import importlib.util
@@ -31,8 +31,9 @@ def main() -> int:
     app_path = Path(sys.argv[1]).resolve()
     source = app_path.read_text(encoding="utf-8")
     check('V48139_VERSION = "48.13.9"' in source, "v48.13.9 marker is missing")
-    check('V48139_BUILD = "r1"' in source, "v48.13.9-r1 marker is missing")
+    check('V48139_BUILD = "r2"' in source, "v48.13.9-r2 marker is missing")
     check('"diskallocated", "diskassigned", "diskallocpct", "diskslots"' in source, "Abuse disk-capacity sort keys are missing")
+    check('_v48133_disk_sort_link("SLOTS", "diskcount"' in source, "Top VM disk-slot sort link is missing")
     check("storage-entity-card-v48139" in source and "storage-disk-row-v48139" in source, "new Storage card hierarchy is missing")
     check("View details" in source and "Overall" in source and "Performance" in source and "Disks" in source, "Storage card sections are incomplete")
 
@@ -82,7 +83,7 @@ def main() -> int:
         check("sort=diskallocated" in html and "sort=diskslots" in html, "Abuse capacity sort links are missing")
         check("abuse-current-v48139" in html, "v48.13.9 Abuse table layer is not active")
 
-    print("PASS: v48.13.9 sortable Abuse disk capacity and clear grouped Storage cards")
+    print("PASS: v48.13.9-r2 Abuse capacity, Top VM slot sort, and grouped Storage cards")
     return 0
 
 

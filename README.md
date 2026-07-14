@@ -1,14 +1,18 @@
-# BW Monitor v48.13.9-r1 Abuse + Storage Cards Production
+# BW Monitor v48.13.9-r2 Swap + Top VM Slots Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **48.13.9-prod-r1-abuse-storage-cards**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **48.13.9-prod-r2-swap-top-slots**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
 
 
-### Abuse disk capacity and clearer Storage cards (48.13.9-r1)
+### Active swap visibility and Top VM slot sorting (48.13.9-r2)
+
+- Node Filesystems and Storage Node include active swap devices from `/proc/swaps`.
+- Top VM now includes `SLOTS` beside `ALLOC · ASSIGNED · %` for customer-disk count sorting.
+- All other UI, policy, retention and cleanup behavior is unchanged.
 
 - `Current VM Abuse` adds a compact `Host Allocated / Assigned` meter across customer disks.
 - Abuse capacity can be sorted independently by `ALLOC`, `ASSIGNED`, `%`, or `SLOTS`.
