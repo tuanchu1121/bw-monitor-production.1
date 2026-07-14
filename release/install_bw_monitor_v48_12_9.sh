@@ -114,6 +114,10 @@ grep -q 'V48136_VERSION = "48.13.6"' "$APP_SRC" || die "Missing v48.13.6 grouped
 grep -q 'V48136_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.6-r1 grouped storage build marker"
 grep -q 'V48137_VERSION = "48.13.7"' "$APP_SRC" || die "Missing v48.13.7 retained storage marker"
 grep -q 'V48137_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.7-r1 retained storage build marker"
+grep -q 'V48138_VERSION = "48.13.8"' "$APP_SRC" || die "Missing v48.13.8 Storage identity UI marker"
+grep -q 'V48138_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.8-r1 Storage identity build marker"
+grep -q 'storage-vm-identity' "$APP_SRC" || die "Missing UUID-first Storage VM identity"
+grep -q 'storage-top-card' "$APP_SRC" || die "Missing Top VM-style Storage controls"
 grep -q 'storage_payload' "$APP_SRC" || die "Missing retained Storage payload"
 grep -q 'Custom Snapshot Time' "$APP_SRC" || die "Missing Storage custom snapshot control"
 grep -q 'CREATE TABLE IF NOT EXISTS vm_disk_current' "$APP_SRC" || die "Missing per-disk current schema"
@@ -202,7 +206,7 @@ say "Run isolated regression suites on temporary SQLite databases"
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.13.7-r1 retained-storage pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.13.8-r1 Storage identity/bars pre-flight checks passed. No files were installed."
   exit 0
 fi
 

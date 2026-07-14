@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression coverage for v48.13.7 retained Storage I/O snapshots.
+"""Regression coverage for v48.13.8 retained Storage I/O snapshots and identity-first UI.
 
 Checks:
 - compact storage payload is attached to retained node_push_snapshots;
@@ -7,6 +7,8 @@ Checks:
 - custom datetime opens the nearest retained storage sample;
 - storage dropdown values are unique across nodes;
 - All views use compact VM/node cards and default to 30 rows;
+- VM UUID is primary, node/IP are supporting metadata, controls match Top VM;
+- allocated/assigned meters are visibly color-coded;
 - exact UUID purge removes the UUID from retained storage payloads too.
 """
 from __future__ import annotations
@@ -93,11 +95,14 @@ def storage_payload(write_mib_s):
 def main():
     app_path = Path(sys.argv[1] if len(sys.argv) > 1 else "./bw_monitor_app_v48_12_9_operations_ui.py").resolve()
     source = app_path.read_text(encoding="utf-8")
-    check('V48137_VERSION = "48.13.7"' in source, "v48.13.7 marker is missing")
-    check('V48137_BUILD = "r1"' in source, "v48.13.7-r1 marker is missing")
+    check('V48137_VERSION = "48.13.7"' in source, "v48.13.7 retained-history marker is missing")
+    check('V48138_VERSION = "48.13.8"' in source, "v48.13.8 marker is missing")
+    check('V48138_BUILD = "r1"' in source, "v48.13.8-r1 marker is missing")
     check('storage_payload' in source and 'zlib.compress' in source, "compressed retained Storage payload is missing")
-    check('Custom Snapshot Time' in source and 'SNAPSHOT AGE' in source, "Storage custom time/age controls are missing")
+    check('Custom Snapshot Time' in source and 'Snapshot lookback' in source, "Top VM-style Storage snapshot controls are missing")
     check('storage-vm-card' in source and 'storage-node-card' in source, "compact Storage card views are missing")
+    check('storage-vm-identity' in source and 'identity-kicker' in source, "UUID-first VM identity layout is missing")
+    check('disk-cap-meter' in source and '#12b76a' in source, "colored allocated/assigned meter is missing")
     check('SELECT DISTINCT mount FROM (' in source, "Storage dropdown mount deduplication is missing")
 
     with tempfile.TemporaryDirectory(prefix="bw-storage-history-") as td:
@@ -139,7 +144,10 @@ def main():
         with mod.app.test_request_context("/storage?view=disks&period=5m"):
             live_html = html_of(mod.app.view_functions["storage_io_page"]())
         check("LIVE CURRENT" in live_html and "20.00 MiB/s" in live_html, "5m Storage view is not live/current")
-        check("Custom Snapshot Time" in live_html and "SNAPSHOT AGE" in live_html, "Storage time controls are not rendered")
+        check("Custom Snapshot Time" in live_html and "Snapshot lookback" in live_html, "Top VM-style Storage time controls are not rendered")
+        check("storage-top-card" in live_html and 'class="search"' in live_html, "Storage toolbar does not match Top VM workflow")
+        check("storage-vm-identity" in live_html and "VM UUID" in live_html, "VM UUID is not the primary Storage identity")
+        check("disk-cap-meter" in live_html, "allocated/assigned color meter is not rendered")
         check('option value="30" selected' in live_html, "Storage default row count is not 30")
         check(live_html.count('option value="/home"') == 1, "Storage dropdown repeats /home across nodes")
         check("storage-vm-card" in live_html, "VM All view is not using the compact card layout")
@@ -167,7 +175,7 @@ def main():
             purged_html = html_of(mod.app.view_functions["storage_io_page"]())
         check(f'data-copy="{vm_uuid}"' not in purged_html and '<article class="storage-vm-card">' not in purged_html, "purged UUID remains visible in retained Storage history")
 
-    print("PASS: v48.13.7 retained Storage snapshots, custom time, deduped filters, compact cards and historical UUID purge")
+    print("PASS: v48.13.8 retained Storage snapshots, Top VM-style controls, UUID-first cards, color meters and historical UUID purge")
     return 0
 
 

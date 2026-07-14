@@ -14,7 +14,7 @@ line_of() {
 bash -n "$INSTALLER"
 bash -n "$BOOTSTRAP"
 
-grep -q 'RELEASE="48.13.7-prod-r1-storage-history-cards"' "$INSTALLER" || fail "retained-storage release marker missing"
+grep -q 'RELEASE="48.13.8-prod-r1-storage-identity-bars"' "$INSTALLER" || fail "Storage identity release marker missing"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$BOOTSTRAP" || fail "bootstrap repository default is wrong"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$INSTALLER" || fail "deployment repository default is wrong"
 grep -q '^wait_for_http()' "$INSTALLER" || fail "HTTP readiness retry helper is missing"

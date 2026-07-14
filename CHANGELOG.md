@@ -1,3 +1,9 @@
+## 48.13.8-prod-r1-storage-identity-bars
+- Made VM UUID the primary identity in Storage I/O; node/IP are compact supporting metadata.
+- Rebuilt Storage lookback/search controls with the same workflow and classes used by Top VM.
+- Restored visible color-coded Allocated / Assigned meters for VM totals and each nested disk.
+- Kept retained snapshot semantics, grouped All view, filtered per-disk view and bounded retention unchanged.
+
 # Changelog
 
 ## 48.13.7-prod-r1-storage-history-cards

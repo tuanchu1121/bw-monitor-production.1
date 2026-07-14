@@ -26573,3 +26573,169 @@ def purge_vm_data(conn, node, vm_uuid, refresh_snapshots=True):
     deleted = _purge_vm_data_v48137_base(conn, node, vm_uuid, refresh_snapshots=refresh_snapshots)
     deleted["storage_snapshot_payloads"] = _v48137_scrub_uuid_from_storage_snapshots(conn, vm_uuid, nodes)
     return deleted
+
+# ---------------------------------------------------------------------------
+# v48.13.8 Storage I/O identity-first layout and Top VM-style controls
+# ---------------------------------------------------------------------------
+V48138_VERSION = "48.13.8"
+V48138_BUILD = "r1"
+
+V48138_STORAGE_CSS = r'''
+<style id="v48138-storage-identity-controls">
+/* Reuse the exact visual language of Top VM for lookback/search controls. */
+.storage-top-card{display:grid;gap:12px}.storage-top-card .top-grid{grid-template-columns:repeat(3,minmax(180px,1fr))}.storage-top-card .periods{margin-top:4px}.storage-top-card .search{display:grid;grid-template-columns:minmax(320px,1fr) minmax(150px,.34fr) minmax(170px,.38fr) minmax(105px,.18fr) auto auto;gap:8px;align-items:center}.storage-top-card .search input,.storage-top-card .search select{min-height:39px}.storage-top-card .search .clear{min-height:39px;display:flex;align-items:center;justify-content:center}.storage-top-card .storage-toolbar-state{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.storage-top-card .storage-toolbar-state span{padding:4px 8px;border:1px solid #d0d5dd;border-radius:999px;font-size:9px;font-weight:900}.storage-top-card .storage-toolbar-state .live{background:#ecfdf3;border-color:#abefc6;color:#067647}.storage-top-card .storage-toolbar-state .history{background:#eff8ff;border-color:#b2ddff;color:#175cd3}
+/* UUID is the primary identity. Node/IP are compact supporting metadata. */
+.storage-vm-card .storage-card-head{grid-template-columns:minmax(390px,.86fr) minmax(620px,1.4fr);gap:18px;padding:14px 16px}.storage-vm-identity{min-width:0}.storage-vm-identity .identity-kicker{display:block;font-size:8px;font-weight:950;letter-spacing:.08em;color:#667085}.storage-vm-identity .identity-uuid{display:flex;align-items:center;gap:7px;min-width:0;margin-top:4px}.storage-vm-identity .identity-uuid>a{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:900}.storage-vm-identity .identity-node{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px;font-size:9px;color:#667085}.storage-vm-identity .identity-node>a{font-weight:900}.storage-vm-identity .identity-node .storage-node-ip{display:inline-flex;align-items:center;gap:4px}.storage-vm-identity .identity-foot{display:block;margin-top:5px;font-size:8.5px;color:#98a2b3}.storage-vm-card .storage-card-summary{grid-template-columns:minmax(230px,1.45fr) repeat(4,minmax(70px,.52fr));gap:9px}.storage-vm-card .storage-card-summary .disk-capacity>b{font-size:12px}.storage-vm-card .storage-card-summary .disk-cap-meter,.storage-vm-card .storage-child-cap .disk-cap-meter{display:block!important;height:7px!important;margin-top:7px!important;background:#e4e7ec!important;border-radius:999px!important;overflow:hidden!important}.storage-vm-card .storage-card-summary .disk-cap-meter i,.storage-vm-card .storage-child-cap .disk-cap-meter i{display:block!important;height:100%!important;border-radius:inherit!important;background:#12b76a!important}.storage-vm-card .disk-cap-warm .disk-cap-meter i{background:#fdb022!important}.storage-vm-card .disk-cap-hot .disk-cap-meter i{background:#f79009!important}.storage-vm-card .disk-cap-critical .disk-cap-meter i{background:#f04438!important}.storage-vm-card .storage-summary-metric b{font-size:11px}.storage-vm-card .storage-card-body{padding:12px 16px 15px}.storage-vm-card .storage-disk-grid{gap:11px}.storage-vm-card .storage-child-item{border-color:#d6dfeb;box-shadow:none}.storage-vm-card .storage-child-title b{font-size:13px}.storage-vm-card .storage-child-cap .disk-capacity b{font-size:11px}.storage-vm-card .storage-child-cap .disk-capacity small{font-size:8px}
+/* Make the historical note compact, like the status strips on Top VM. */
+.storage-snapshot-note{margin-top:0}.storage-history-card{margin:0 0 12px}.storage-history-card .storage-snapshot-note{border:0;background:transparent;padding:0}
+html[data-theme=dark] .storage-vm-identity .identity-kicker,html[data-theme=dark] .storage-vm-identity .identity-node,html[data-theme=dark] .storage-vm-identity .identity-foot{color:#9fb0c4}html[data-theme=dark] .storage-vm-card .storage-card-summary .disk-cap-meter,html[data-theme=dark] .storage-vm-card .storage-child-cap .disk-cap-meter{background:#334155!important}
+@media(max-width:1450px){.storage-vm-card .storage-card-head{grid-template-columns:1fr}.storage-vm-card .storage-card-summary{grid-column:1}.storage-top-card .search{grid-template-columns:minmax(260px,1fr) 150px 170px 100px auto auto}}
+@media(max-width:980px){.storage-top-card .top-grid{grid-template-columns:1fr}.storage-top-card .search{grid-template-columns:1fr 1fr}.storage-top-card .search input{grid-column:1/-1}.storage-vm-card .storage-card-summary{grid-template-columns:1fr 1fr}.storage-vm-card .storage-card-summary .disk-capacity{grid-column:1/-1}}
+</style>
+'''
+
+
+def _v48138_storage_disk_group_cards(conn, values, start_ts):
+    groups, details, total = _v48133_storage_disk_groups(conn, values, start_ts)
+    cards = []
+    for node, vm_uuid, public_ip, disk_count, assigned, allocated, rb, wb, ri, wi, seen in groups:
+        ip = compact_ipv4(public_ip)
+        node_href = url_for(
+            "node_page", node=node, period=values["period"], q=vm_uuid,
+            **({"at": values.get("at")} if values.get("at") else {}),
+        )
+        vm_href = url_for(
+            "vm_page", node=node, vm_uuid=vm_uuid, period=values["period"],
+            **({"at": values.get("at")} if values.get("at") else {}),
+        )
+        ip_line = (
+            f'<span class="storage-node-ip">{escape(ip)}'
+            f'<button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button></span>'
+            if ip else ""
+        )
+        child_html = "".join(
+            _v48136_disk_child_html(node, vm_uuid, row, values["period"])
+            for row in details.get((str(node), str(vm_uuid)), [])
+        )
+        disk_word = "disk" if safe_int(disk_count, 0) == 1 else "disks"
+        identity = f'''
+          <div class="storage-vm-identity">
+            <span class="identity-kicker">VM UUID</span>
+            <div class="identity-uuid"><a href="{escape(vm_href,quote=True)}" title="{escape(vm_uuid,quote=True)}">{escape(vm_uuid)}</a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></div>
+            <div class="identity-node"><span>Node</span><a href="{escape(node_href,quote=True)}">{escape(node)}</a>{ip_line}</div>
+            <small class="identity-foot">{safe_int(disk_count,0)} customer {disk_word} · latest sample {fmt_push(seen)}</small>
+          </div>'''
+        cards.append(f'''
+        <article class="storage-vm-card">
+          <div class="storage-card-head">
+            {identity}
+            {_v48137_summary_metrics(allocated,assigned,rb,wb,ri,wi)}
+          </div>
+          <div class="storage-card-body"><div class="storage-disk-grid">{child_html}</div></div>
+        </article>''')
+    if not cards:
+        cards = ['<div class="storage-card-empty">No customer disk sample at this snapshot.</div>']
+    sort_bar = _v48137_sort_bar(values, [
+        ("W IOPS","writeiops"),("WRITE","write"),("R IOPS","readiops"),("READ","read"),
+        ("ALLOC","allocated"),("ASSIGNED","assigned"),("%","allocpct"),("DISKS","diskcount"),("UUID","uuid"),("NODE","node"),
+    ])
+    return f'''
+    {STORAGE_IO_CSS}{V48136_STORAGE_CSS}{V48137_STORAGE_CSS}{V48138_STORAGE_CSS}
+    <div class="card storage-table-card">
+      <div class="table-title-row"><div><h3>VM Disks</h3><div class="table-hint">One VM card per UUID. UUID is the primary object; node and IP stay as supporting context, and every customer disk remains nested below the VM.</div></div>{sort_bar}</div>
+      <div class="storage-card-list">{"".join(cards)}</div>{_storage_pager(values,total)}
+    </div>'''
+
+
+# The existing dispatch function resolves this name at request time.
+_v48137_storage_disk_group_cards = _v48138_storage_disk_group_cards
+
+
+def _v48138_storage_status_summary(snapshot, stats):
+    if snapshot and snapshot.get("mode") == "history":
+        actual = stats.get("max_seen") or snapshot.get("target") or 0
+        return "HISTORICAL", "history", actual
+    latest = (snapshot or {}).get("latest") or 0
+    return "LIVE", "live", latest
+
+
+def storage_io_page_v48138():
+    values = _storage_io_params()
+    if values["view"] not in {"disks", "nodes", "backends"}:
+        values["view"] = "disks"
+    if values["view"] == "backends":
+        values["view"] = "nodes"
+
+    conn = db()
+    snapshot = None
+    stats = {"nodes": 0, "disks": 0, "storages": 0, "min_seen": 0, "max_seen": 0}
+    try:
+        ensure_storage_snapshot_schema(conn)
+        snapshot = _v48137_storage_target(conn, values)
+        if snapshot["mode"] == "history":
+            payload_rows = _v48137_snapshot_payload_rows(conn, values, snapshot["target"])
+            stats = _v48137_create_snapshot_shadow_tables(conn, payload_rows)
+            start_ts = 0
+        else:
+            start_ts = now_ts() - max(CACHE_BUCKET_SECONDS * 2, period_seconds("5m"))
+        node_options, mount_options = _v48137_storage_filter_options(conn, values)
+        if values["view"] == "nodes":
+            table = _v48133_storage_node_table(conn, values, start_ts)
+        else:
+            table = _v48133_storage_disk_table(conn, values, start_ts)
+    finally:
+        conn.close()
+
+    at_value = values.get("at") or ""
+    disk_tab = _storage_io_url(values, view="disks", sort="writeiops", order="desc", page=1)
+    node_tab = _storage_io_url(values, view="nodes", sort="writeiops", order="desc", page=1)
+    disk_active = "active" if values["view"] == "disks" else ""
+    node_active = "active" if values["view"] == "nodes" else ""
+    history_label, history_class, selected_ts = _v48138_storage_status_summary(snapshot, stats)
+    latest_ts = (snapshot or {}).get("latest") or selected_ts or now_ts()
+    selected_text = "Live current" if history_class == "live" else (fmt_full(selected_ts) if selected_ts else "No retained point")
+    hidden_at = f'<input type="hidden" name="at" value="{escape(at_value,quote=True)}">' if at_value else ""
+    row_options = "".join(
+        f'<option value="{n}"{" selected" if values["limit"]==n else ""}>{n} rows</option>'
+        for n in (10, 20, 30, 50, 100, 200)
+    )
+    clear_kwargs = {"view": values["view"], "period": values["period"], "limit": values["limit"]}
+    clear_href = url_for("storage_io_page", **clear_kwargs)
+    target_ts = _request_target_ts()
+
+    toolbar = f'''
+    <div class="card top-card storage-top-card">
+      <div class="top-grid">
+        <div><div class="label">Latest Available</div><div class="value">{fmt_full(latest_ts)}</div></div>
+        <div><div class="label">Timezone</div><div class="value">{escape(TZ_NAME)}</div></div>
+        <div><div class="label">Selected Snapshot</div><div class="value">{escape(selected_text)}</div></div>
+      </div>
+      <div class="table-title-row"><div><div class="label period-label">Snapshot lookback</div></div><div class="storage-toolbar-state"><span class="{history_class}">{history_label}</span></div></div>
+      <div class="periods storage-periods">{_storage_period_links(values)}</div>
+      <form class="search" method="get" action="{url_for('storage_io_page')}">
+        <input type="hidden" name="view" value="{escape(values['view'],quote=True)}"><input type="hidden" name="period" value="{escape(values['period'],quote=True)}"><input type="hidden" name="sort" value="{escape(values['sort'],quote=True)}"><input type="hidden" name="order" value="{escape(values['order'],quote=True)}">{hidden_at}
+        <input name="q" value="{escape(values['q'],quote=True)}" placeholder="Search node, IP, UUID, disk, path or mount">
+        <select name="node" aria-label="Node filter">{node_options}</select>
+        <select name="mount" aria-label="Storage filter">{mount_options}</select>
+        <select name="limit" aria-label="Row limit">{row_options}</select>
+        <button type="submit">Search</button><a class="clear" href="{escape(clear_href,quote=True)}">Clear</a>
+      </form>
+    </div>'''
+
+    time_card = _custom_snapshot_control(
+        "storage_io_page", target_ts, title="Custom Snapshot Time",
+        view=values["view"], period=values["period"], q=values["q"] or None,
+        node=values["node"] or None, mount=values["mount"] or None,
+        sort=values["sort"], order=values["order"], limit=values["limit"], page=1,
+    )
+    note = f'<div class="card storage-history-card">{_v48137_storage_snapshot_note(snapshot or {"mode":"live","latest":0,"target":0}, stats)}</div>'
+    content = (
+        STORAGE_IO_CSS + V48137_STORAGE_CSS + V48138_STORAGE_CSS
+        + '<div class="card storage-hero"><div><span class="eyebrow">DISK MONITOR</span><h2>Storage I/O</h2><p>Search and open retained snapshots with the same workflow as Top VM.</p></div>'
+        + f'<div class="storage-tabs"><a class="{disk_active}" href="{escape(disk_tab,quote=True)}">VM Disks</a><a class="{node_active}" href="{escape(node_tab,quote=True)}">Storage Node</a></div></div>'
+        + toolbar + time_card + note + table
+    )
+    return page("Storage I/O", content)
+
+
+app.view_functions["storage_io_page"] = storage_io_page_v48138

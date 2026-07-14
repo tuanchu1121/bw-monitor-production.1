@@ -1,0 +1,7 @@
+BW Monitor v48.13.8-r1 Storage Identity / Bars
+
+- VM UUID is primary in Storage I/O cards.
+- Node name and IPv4 are compact supporting metadata below the UUID.
+- Storage search/lookback/rows/custom-time controls match Top VM workflow.
+- Allocated / Assigned meters are visible and color-coded at VM-total and per-disk levels.
+- No collector, schema, retention or purge behavior changed from v48.13.7.

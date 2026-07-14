@@ -1,11 +1,19 @@
-# BW Monitor v48.13.7-r1 Retained Storage Production
+# BW Monitor v48.13.8-r1 Storage Identity Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor 48.13.7-prod-r1-storage-history-cards**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **48.13.8-prod-r1-storage-identity-bars**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
+
+
+### UUID-first Storage cards and Top VM-style controls (48.13.8-r1)
+
+- `VM Disks` now treats the VM UUID as the primary identity; node and IPv4 are compact supporting metadata, matching the operational hierarchy used by the Abuse page.
+- Storage lookback, search, row limit and custom snapshot controls use the same workflow and visual structure as Top VM.
+- `Allocated / Assigned` meters are explicitly loaded and color-coded on both VM totals and every nested virtual disk.
+- Retained Storage history, grouped UUID cards, per-mount forensic mode and bounded retention remain unchanged.
 
 ### Retained Storage snapshots and compact cards (48.13.7-r1)
 
