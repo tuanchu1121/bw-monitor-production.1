@@ -1,0 +1,111 @@
+BW Monitor v48.12.8-r1
+History-backed API data is bounded to seven days.
+The Dashboard is simplified to Current Abuse + Abuse Events, but summary/raw/incident/ranking APIs remain compatible.
+Hidden VMs and VMs whose parent Node is hidden are excluded by default.
+
+BW Monitor REST API v1
+======================
+
+Authentication
+--------------
+Authorization: Bearer bwm_live_<key_id>_<secret>
+
+Recommended Abuse scopes
+------------------------
+abuse:read
+abuse_events:read
+
+Optional scopes
+---------------
+vm:read
+node:read
+bandwidth:read
+api_logs:read
+
+Primary Abuse endpoints
+-----------------------
+GET /api/v1/me
+GET /api/v1/health
+GET /api/v1/abuse/summary
+GET /api/v1/abuse/vms
+GET /api/v1/abuse/vms?view=full
+GET /api/v1/abuse/vms/<uuid>?node=<node>
+GET /api/v1/abuse/events
+GET /api/v1/abuse/events?view=full
+
+Abuse incident/ranking endpoints
+--------------------------------
+GET /api/v1/abuse/incidents
+Scope: abuse_events:read
+
+Common query parameters:
+  q=<node-or-uuid-text>
+  node=<node>
+  type=all|network|cpu|ram|disk
+  status=all|open|closed
+  since=<unix-seconds>
+  limit=<1..500>
+  offset=<non-negative>
+
+GET /api/v1/abuse/rankings
+Scope: abuse_events:read
+
+Common query parameters:
+  q=<node-or-uuid-text>
+  node=<node>
+  type=all|network|cpu|ram|disk
+  since=<unix-seconds>
+  limit=<1..500>
+
+Ranking fields include:
+  node
+  vm_uuid
+  incident_count
+  active_count
+  total_duration_seconds
+  max_severity
+  weighted_score
+  last_seen
+
+Current RAM Abuse fields
+------------------------
+When RAM metrics are available, full Current Abuse data may include:
+  rss_percent
+  guest_used_percent
+  usable_percent
+  streak_seconds
+
+RAM flag:
+  RAM_SUSTAINED
+
+Extended monitor endpoints
+--------------------------
+GET /api/v1/vms
+GET /api/v1/vms/<uuid>/current?node=<node>
+GET /api/v1/nodes
+GET /api/v1/bandwidth/vms
+GET /api/v1/bandwidth/vms/<uuid>?node=<node>
+
+API observability endpoints
+---------------------------
+GET /api/v1/logs/requests?limit=100&offset=0
+GET /api/v1/logs/requests?since=<unix>&key_id=<key_id>
+GET /api/v1/logs/events?limit=100&offset=0
+GET /api/v1/logs/events?since=<unix>&key_id=<key_id>&event_type=KEY_UPDATED
+
+Examples
+--------
+API_KEY='bwm_live_xxxxxxxxxxxx_SECRET'
+BASE_URL='https://monitor.example.com'
+
+curl -sS \
+-H "Authorization: Bearer ${API_KEY}" \
+"${BASE_URL}/api/v1/abuse/vms?type=ram&limit=100" | jq
+
+curl -sS \
+-H "Authorization: Bearer ${API_KEY}" \
+"${BASE_URL}/api/v1/abuse/incidents?since=$(date -d '24 hours ago' +%s)&limit=100" | jq
+
+curl -sS \
+-H "Authorization: Bearer ${API_KEY}" \
+"${BASE_URL}/api/v1/abuse/rankings?limit=20" | jq

@@ -1,0 +1,25 @@
+BW Monitor v48.12.9-r2 Fix Notes
+================================
+
+R1 issue
+--------
+The R1 application source could not compile on Python because `_v48129_rule_chip` used a nested f-string expression with escaped quotes. Pre-flight stopped safely before installation.
+
+R2 fix
+------
+The HTML title attribute is now prepared in `title_attr` before the outer f-string is rendered.
+
+Impact
+------
+- No database migration
+- No Agent deployment
+- No API key rotation
+- No BW_MONITOR_TOKEN change
+- No retention-policy change
+- No Current Abuse reset
+
+Validation
+----------
+- Python compile: PASS
+- Installer pre-flight: PASS
+- Full regression suite v48.10.0 through v48.12.9: PASS

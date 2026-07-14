@@ -1,0 +1,29 @@
+[Unit]
+Description=BW Monitor exclusive database maintenance job %i
+After=local-fs.target
+ConditionPathExists=/opt/bw-monitor/bw_monitor_maintenance.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/bw-monitor
+EnvironmentFile=-/etc/default/bw-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=BW_MONITOR_APP_SERVICE=bw-monitor.service
+ExecStart=/bin/bash -lc 'for py in /opt/bw-monitor/venv/bin/python3 /opt/bw-monitor/.venv/bin/python3 /usr/bin/python3; do if [ -x "$py" ]; then exec "$py" /opt/bw-monitor/bw_monitor_maintenance.py %i; fi; done; echo "No Python interpreter found" >&2; exit 127'
+# Safety net: the Python runner writes this marker before intentionally stopping
+# the dashboard. If the worker is killed during VACUUM, systemd restores it.
+ExecStopPost=/bin/bash -lc 'marker=/run/bw-monitor-maintenance-web-offline; if [ -s "$marker" ]; then state=$(systemctl is-system-running 2>/dev/null || true); svc=$(head -n1 "$marker" | tr -cd "A-Za-z0-9@_.:-"); case "$state" in stopping|offline) ;; *) [ -n "$svc" ] && systemctl reset-failed "$svc" >/dev/null 2>&1 || true; [ -n "$svc" ] && systemctl start "$svc" >/dev/null 2>&1 || true ;; esac; rm -f "$marker"; fi'
+TimeoutStartSec=6h
+TimeoutStopSec=60
+KillSignal=SIGTERM
+SendSIGKILL=yes
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Template units are started explicitly per numeric job ID. Do not enable the template.

@@ -1,0 +1,68 @@
+BW Monitor v48.12.9-r2 Recovery Guide
+=====================================
+
+Installer rollback
+------------------
+If service verification fails, the installer restores the previous app,
+maintenance worker and systemd files from:
+
+/opt/bw-monitor/backup-v48.12.9-YYYY-MM-DD-HHMMSS
+
+Manual restore
+--------------
+
+BACKUP_DIR=/opt/bw-monitor/backup-v48.12.9-YYYY-MM-DD-HHMMSS
+
+cp "$BACKUP_DIR/app.py" /opt/bw-monitor/app.py
+cp "$BACKUP_DIR/bw_monitor_maintenance.py" /opt/bw-monitor/bw_monitor_maintenance.py
+cp "$BACKUP_DIR/bw-monitor-maintenance@.service" /etc/systemd/system/bw-monitor-maintenance@.service
+
+systemctl daemon-reload
+systemctl restart bw-monitor
+systemctl status bw-monitor --no-pager -l
+
+Stuck maintenance recovery
+--------------------------
+
+cd /root/bw-monitor-v48.12.9-r2-full
+./recover_bw_monitor_maintenance_v48_12_9.sh
+
+Database check
+--------------
+
+/opt/bw-monitor/check_bw_monitor_db_v48_12_9.sh
+
+Full quick check:
+
+/opt/bw-monitor/check_bw_monitor_db_v48_12_9.sh --quick-check
+
+Cleanup verification
+--------------------
+
+Check the active cleanup route:
+
+grep -n 'def clear_abuse_events_v48129' /opt/bw-monitor/app.py
+
+grep -nF 'DELETE FROM vm_abuse_incidents' /opt/bw-monitor/app.py
+
+If a previous partial deployment left stale incidents, back up the database,
+stop the monitor briefly, clear both history tables, and restart:
+
+sqlite3 /opt/bw-monitor/bandwidth.db \
+".backup '/root/bandwidth-before-abuse-clean-$(date +%Y%m%d-%H%M%S).db'"
+
+systemctl stop bw-monitor
+
+sqlite3 /opt/bw-monitor/bandwidth.db <<'SQL'
+PRAGMA busy_timeout=30000;
+BEGIN IMMEDIATE;
+DELETE FROM vm_abuse_events;
+DELETE FROM vm_abuse_incidents;
+COMMIT;
+SQL
+
+systemctl start bw-monitor
+systemctl status bw-monitor --no-pager -l
+
+This preserves Current Abuse in vm_abuse_state. Use the Admin action
+RESET ALL ABUSE DATA only when current state/streaks must also be reset.

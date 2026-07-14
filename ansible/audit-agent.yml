@@ -1,0 +1,16 @@
+---
+- name: Audit BW Monitor Agent
+  hosts: all
+  become: true
+  gather_facts: false
+  strategy: free
+
+  tasks:
+    - name: Run Agent doctor
+      ansible.builtin.command: /usr/local/sbin/bwagent-doctor
+      register: doctor
+      changed_when: false
+
+    - name: Show Agent doctor result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}\n{{ doctor.stdout }}"

@@ -1,0 +1,113 @@
+---
+- name: Remove BW Agent completely and safely
+  hosts: all
+  become: false
+  gather_facts: false
+  strategy: free
+
+  tasks:
+    - name: Stop disable and kill known BW Agent units
+      ansible.builtin.shell: |
+        set +e
+        timeout 10 systemctl stop bwagent.service bwagent.timer bw-agent.service bw-agent.timer 2>/dev/null || true
+        timeout 10 systemctl kill --kill-who=all --signal=KILL bwagent.service 2>/dev/null || true
+        timeout 10 systemctl kill --kill-who=all --signal=KILL bw-agent.service 2>/dev/null || true
+        systemctl disable bwagent.service bwagent.timer bw-agent.service bw-agent.timer 2>/dev/null || true
+        # Exact anchored command patterns only. Never use pkill -f bwagent because
+        # that also matches and kills the Ansible shell command itself.
+        for pid in $(pgrep -f '^(/usr/bin/)?python3? /usr/local/lib/bwagent/agent\.py$' 2>/dev/null); do
+          kill -9 "$pid" 2>/dev/null || true
+        done
+        exit 0
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Remove BW Agent files old units state and runtime
+      ansible.builtin.shell: |
+        set -e
+        rm -f \
+          /etc/systemd/system/bwagent.service \
+          /etc/systemd/system/bwagent.timer \
+          /etc/systemd/system/bw-agent.service \
+          /etc/systemd/system/bw-agent.timer \
+          /usr/lib/systemd/system/bwagent.service \
+          /usr/lib/systemd/system/bwagent.timer \
+          /usr/lib/systemd/system/bw-agent.service \
+          /usr/lib/systemd/system/bw-agent.timer \
+          /lib/systemd/system/bwagent.service \
+          /lib/systemd/system/bwagent.timer \
+          /lib/systemd/system/bw-agent.service \
+          /lib/systemd/system/bw-agent.timer \
+          /etc/bwagent.env \
+          /etc/default/bwagent \
+          /etc/sysconfig/bwagent \
+          /usr/local/sbin/bwagent-load-check \
+          /usr/local/sbin/bw-agent-load-check \
+          /usr/local/bin/bwagent \
+          /usr/local/bin/bw-agent
+        rm -rf \
+          /usr/local/lib/bwagent \
+          /opt/bwagent \
+          /opt/bw-agent \
+          /var/lib/bw-agent \
+          /var/lib/bwagent \
+          /var/log/bwagent
+        rm -f /run/bwagent* /run/bw-agent* /tmp/bwagent* /tmp/bw-agent* 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Remove cron entries that reference BW Agent
+      ansible.builtin.shell: |
+        set +e
+        for f in /etc/crontab /etc/cron.d/*; do
+          [ -f "$f" ] || continue
+          sed -i '/bwagent/d;/bw-agent/d' "$f"
+        done
+        current="$(crontab -l 2>/dev/null || true)"
+        if [ -n "$current" ]; then
+          printf '%s\n' "$current" | grep -viE 'bwagent|bw-agent' | crontab - 2>/dev/null || true
+        fi
+        exit 0
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reload systemd and clear failed state
+      ansible.builtin.shell: |
+        systemctl daemon-reload
+        systemctl reset-failed 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify BW Agent was removed
+      ansible.builtin.shell: |
+        set -e
+        test "$(systemctl is-active bwagent.service 2>/dev/null || true)" != "active"
+        test "$(systemctl is-active bw-agent.service 2>/dev/null || true)" != "active"
+        if pgrep -f '^(/usr/bin/)?python3? /usr/local/lib/bwagent/agent\.py$' >/dev/null 2>&1; then
+          echo 'FAILED: exact agent process still running'
+          exit 1
+        fi
+        for p in \
+          /etc/systemd/system/bwagent.service \
+          /etc/systemd/system/bwagent.timer \
+          /etc/bwagent.env \
+          /usr/local/lib/bwagent \
+          /var/lib/bw-agent; do
+          if [ -e "$p" ]; then
+            echo "FAILED: still exists: $p"
+            exit 1
+          fi
+        done
+        echo 'BWAGENT_REMOVED_OK'
+      args:
+        executable: /bin/bash
+      register: bwagent_remove_verify
+      changed_when: false
+
+    - name: Show result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ bwagent_remove_verify.stdout | default('BWAGENT_REMOVED_OK') }}"

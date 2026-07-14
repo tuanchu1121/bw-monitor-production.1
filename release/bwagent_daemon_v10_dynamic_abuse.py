@@ -1,0 +1,1511 @@
+#!/usr/bin/env python3
+"""
+bw-agent v10 daemon (monitor-synchronized directional PPS abuse + total peaks)
+
+Collects:
+  1) VM/tap network traffic from libvirt domiflist + /sys/class/net/<tap>/statistics
+  2) VM CPU/RAM/Disk from virsh domstats
+  3) Host CPU/RAM/Disk/filesystem from /proc, /sys, df
+  4) Physical/uplink NIC counters for br0/br1 bridge members
+  5) IPv4 addresses assigned directly to br0/br1
+  6) Agent self-health timings
+  7) Local 15-second VM network peak sampling with directional sustained PPS timers and one 5-minute HTTP push
+
+Important CPU behavior:
+  - cpu_percent is now CORE-based:
+      100% = 1 full CPU core
+      400% = 4 full CPU cores
+  - cpu_normalized_percent is also sent:
+      100% = all assigned vCPU fully used
+"""
+
+import os
+import json
+import time
+import subprocess
+import urllib.request
+import ipaddress
+import copy
+import signal
+import threading
+from pathlib import Path
+
+API = os.environ.get("BW_AGENT_API", "http://103.199.19.207:8080/push")
+TOKEN = os.environ.get("BW_AGENT_TOKEN", "123456")
+STATE = os.environ.get("BW_AGENT_STATE", "/var/lib/bw-agent/state.json")
+NODE_NAME = (os.environ.get("BW_AGENT_NODE") or os.uname().nodename).strip()
+
+COLLECT_VM_NET = os.environ.get("BW_AGENT_COLLECT_VM_NET", "1") == "1"
+COLLECT_VM_PERF = os.environ.get("BW_AGENT_COLLECT_VM_PERF", "1") == "1"
+COLLECT_NODE_HOST = os.environ.get("BW_AGENT_COLLECT_NODE_HOST", "1") == "1"
+COLLECT_PHYSICAL_NET = os.environ.get("BW_AGENT_COLLECT_PHYSICAL_NET", "1") == "1"
+
+# Default mapping:
+#   public  -> physical/uplink member of br0
+#   private -> physical/uplink member of br1
+#
+# Override examples:
+#   BW_AGENT_BRIDGE_ROLES="public:br0,private:br1"
+#   BW_AGENT_BRIDGE_ROLES="public:br-public,private:br-private"
+BRIDGE_ROLES = os.environ.get("BW_AGENT_BRIDGE_ROLES", "public:br0,private:br1")
+
+API_TIMEOUT = int(os.environ.get("BW_AGENT_API_TIMEOUT", "15"))
+DOMSTATS_TIMEOUT = int(os.environ.get("BW_AGENT_DOMSTATS_TIMEOUT", "60"))
+VIRSH_LIST_TIMEOUT = int(os.environ.get("BW_AGENT_VIRSH_LIST_TIMEOUT", "30"))
+DOMIFLIST_TIMEOUT = int(os.environ.get("BW_AGENT_DOMIFLIST_TIMEOUT", "30"))
+
+DRY_RUN = os.environ.get("BW_AGENT_DRY_RUN", "0") == "1"
+
+# Daemon scheduling. Sampling is local only; HTTP push remains every 5 minutes.
+SAMPLE_SECONDS = max(5, int(os.environ.get("BW_AGENT_SAMPLE_SECONDS", "15")))
+PUSH_SECONDS = max(60, int(os.environ.get("BW_AGENT_PUSH_SECONDS", "300")))
+MAX_LOAD = float(os.environ.get("BW_AGENT_MAX_LOAD", "160"))
+# Preserve the old agent behavior by default: high load is reported, but CPU/RAM/disk
+# collection is NOT silently removed. Set this to 1 only if you explicitly accept
+# network-only payloads while the node is overloaded.
+SKIP_HEAVY_ON_OVERLOAD = os.environ.get("BW_AGENT_SKIP_HEAVY_ON_OVERLOAD", "0") == "1"
+PPS_WARN = max(0.0, float(os.environ.get("BW_AGENT_PPS_WARN", "200000")))
+MBPS_WARN = max(0.0, float(os.environ.get("BW_AGENT_MBPS_WARN", "800")))
+STALE_IFACE_SECONDS = max(120, int(os.environ.get("BW_AGENT_STALE_IFACE_SECONDS", "600")))
+RUNTIME = os.environ.get("BW_AGENT_RUNTIME", "/var/lib/bw-agent/runtime.json")
+QUIET = os.environ.get("BW_AGENT_QUIET", "0") == "1"
+
+AGENT_VERSION = 10
+STOP_EVENT = threading.Event()
+
+
+def ms_since(start):
+    return int((time.monotonic() - start) * 1000)
+
+
+def add_error(health, message):
+    try:
+        errors = health.setdefault("errors", [])
+        if len(errors) < 50:
+            errors.append(str(message)[:300])
+    except Exception:
+        pass
+
+
+def run(cmd, timeout=30):
+    return subprocess.check_output(
+        cmd,
+        universal_newlines=True,
+        stderr=subprocess.DEVNULL,
+        timeout=timeout,
+    ).strip()
+
+
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def load_state():
+    try:
+        with open(STATE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_state(state):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f, separators=(",", ":"))
+    os.replace(tmp, STATE)
+
+
+def read_text(path, default=""):
+    try:
+        return Path(path).read_text().strip()
+    except Exception:
+        return default
+
+
+def read_counter(path):
+    try:
+        return int(Path(path).read_text().strip())
+    except Exception:
+        return 0
+
+
+def delta_counter(new, old):
+    new = safe_int(new, 0)
+    old = safe_int(old, new)
+    if new < old:
+        return 0
+    return new - old
+
+
+def parse_bridge_roles(value):
+    roles = []
+    for item in (value or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            role, bridge = item.split(":", 1)
+        elif "=" in item:
+            role, bridge = item.split("=", 1)
+        else:
+            continue
+        role = role.strip().lower()
+        bridge = bridge.strip()
+        if role and bridge:
+            roles.append((role, bridge))
+    if not roles:
+        roles = [("public", "br0"), ("private", "br1")]
+    return roles
+
+
+def parse_ip_addr_json(text):
+    """Parse `ip -j address show` output into a stable IPv4 CIDR list."""
+    try:
+        payload = json.loads(text or "[]")
+    except Exception:
+        return {"ipv4": [], "primary_ipv4": ""}
+
+    if isinstance(payload, dict):
+        payload = [payload]
+
+    found = []
+    seen = set()
+
+    for link in payload if isinstance(payload, list) else []:
+        if not isinstance(link, dict):
+            continue
+        for item in link.get("addr_info") or []:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("family") or "").lower() != "inet":
+                continue
+
+            local = str(item.get("local") or "").strip()
+            if not local:
+                continue
+
+            try:
+                ip_obj = ipaddress.ip_address(local)
+            except ValueError:
+                continue
+
+            flags = {str(flag).lower() for flag in (item.get("flags") or [])}
+            if "tentative" in flags or "dadfailed" in flags:
+                continue
+            if ip_obj.is_loopback or ip_obj.is_unspecified or ip_obj.is_multicast:
+                continue
+
+            prefixlen = safe_int(item.get("prefixlen"), 32)
+            cidr = "%s/%s" % (local, prefixlen)
+            if cidr in seen:
+                continue
+            seen.add(cidr)
+            found.append({
+                "cidr": cidr,
+                "scope": str(item.get("scope") or ""),
+                "dynamic": "dynamic" in flags,
+                "secondary": "secondary" in flags,
+            })
+
+    scope_rank = {"global": 0, "site": 1, "link": 2, "host": 3}
+    found.sort(key=lambda item: (
+        scope_rank.get(item.get("scope") or "", 9),
+        1 if item.get("secondary") else 0,
+        1 if item.get("dynamic") else 0,
+        item.get("cidr") or "",
+    ))
+
+    ipv4 = [item["cidr"] for item in found]
+    return {
+        "ipv4": ipv4,
+        "primary_ipv4": ipv4[0] if ipv4 else "",
+    }
+
+
+def collect_bridge_addresses(health=None):
+    """Collect IPv4 addresses assigned directly to br0/br1 bridge devices."""
+    rows = []
+    for role, bridge in parse_bridge_roles(BRIDGE_ROLES):
+        base = Path("/sys/class/net") / bridge
+        if not base.exists():
+            add_error(health, "bridge does not exist: %s:%s" % (role, bridge))
+            continue
+
+        try:
+            raw = run(["ip", "-j", "-4", "address", "show", "dev", bridge], timeout=10)
+            addresses = parse_ip_addr_json(raw)
+        except Exception as exc:
+            add_error(health, "cannot read bridge IPv4 for %s:%s: %s" % (role, bridge, exc))
+            addresses = {"ipv4": [], "primary_ipv4": ""}
+
+        meta = iface_metadata(bridge)
+        rows.append({
+            "role": role,
+            "bridge": bridge,
+            "ipv4": addresses["ipv4"],
+            "primary_ipv4": addresses["primary_ipv4"],
+            "operstate": meta["operstate"],
+            "carrier": meta["carrier"],
+            "mtu": meta["mtu"],
+            "mac": meta["address"],
+        })
+    return rows
+
+def get_vm_names(health=None):
+    """Return (active_domain_names, inventory_complete).
+
+    A successful empty list is complete. A virsh failure is incomplete so the
+    monitor does not mark every previously known VM as missing.
+    """
+    try:
+        out = run(["virsh", "list", "--name"], timeout=VIRSH_LIST_TIMEOUT)
+        return [x.strip() for x in out.splitlines() if x.strip()], True
+    except Exception as e:
+        add_error(health, "virsh list failed: %s" % e)
+        return [], False
+
+
+def parse_domiflist(vm, health=None):
+    rows = []
+    try:
+        out = run(["virsh", "domiflist", vm], timeout=DOMIFLIST_TIMEOUT)
+    except Exception as e:
+        add_error(health, "domiflist failed for %s: %s" % (vm, e))
+        return rows
+
+    for line in out.splitlines():
+        p = line.split()
+        if len(p) < 5:
+            continue
+        if p[0] == "Interface" or p[0].startswith("-"):
+            continue
+        rows.append({"iface": p[0], "bridge": p[2], "mac": p[4]})
+    return rows
+
+
+def collect_interface_counters(iface):
+    base = Path("/sys/class/net") / iface / "statistics"
+    if not base.exists():
+        return None
+    return {
+        "rx": read_counter(base / "rx_bytes"),
+        "tx": read_counter(base / "tx_bytes"),
+        "rx_packets": read_counter(base / "rx_packets"),
+        "tx_packets": read_counter(base / "tx_packets"),
+        "rx_drop": read_counter(base / "rx_dropped"),
+        "tx_drop": read_counter(base / "tx_dropped"),
+        "rx_error": read_counter(base / "rx_errors"),
+        "tx_error": read_counter(base / "tx_errors"),
+    }
+
+
+def collect_network(vm_names, state, health=None):
+    rows = []
+    for vm in vm_names:
+        for nic in parse_domiflist(vm, health=health):
+            iface = nic["iface"]
+            bridge = nic["bridge"]
+            mac = nic["mac"]
+
+            counters = collect_interface_counters(iface)
+            if not counters:
+                continue
+
+            key = "net:%s:%s" % (vm, iface)
+            old_key = "%s:%s" % (vm, iface)  # old agent state key
+            old = state.get(key)
+            if old is None:
+                old = state.get(old_key, {})
+
+            row = {
+                "vm_uuid": vm,
+                "iface": iface,
+                "bridge": bridge,
+                "mac": mac,
+                "rx_delta": delta_counter(counters["rx"], old.get("rx", counters["rx"])),
+                "tx_delta": delta_counter(counters["tx"], old.get("tx", counters["tx"])),
+                "rx_packets_delta": delta_counter(counters["rx_packets"], old.get("rx_packets", counters["rx_packets"])),
+                "tx_packets_delta": delta_counter(counters["tx_packets"], old.get("tx_packets", counters["tx_packets"])),
+                "rx_drop_delta": delta_counter(counters["rx_drop"], old.get("rx_drop", counters["rx_drop"])),
+                "tx_drop_delta": delta_counter(counters["tx_drop"], old.get("tx_drop", counters["tx_drop"])),
+                "rx_error_delta": delta_counter(counters["rx_error"], old.get("rx_error", counters["rx_error"])),
+                "tx_error_delta": delta_counter(counters["tx_error"], old.get("tx_error", counters["tx_error"])),
+            }
+            state[key] = counters
+            rows.append(row)
+    return rows
+
+
+def split_domstats_blocks(text):
+    blocks = []
+    current_domain = None
+    current_stats = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("Domain:"):
+            if current_domain is not None:
+                blocks.append((current_domain, current_stats))
+            parts = line.split("'", 2)
+            current_domain = parts[1] if len(parts) >= 2 else line.replace("Domain:", "").strip()
+            current_stats = {}
+            continue
+        if current_domain is None:
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            current_stats[k.strip()] = v.strip()
+    if current_domain is not None:
+        blocks.append((current_domain, current_stats))
+    return blocks
+
+
+def collect_vm_perf(state, now_ts, health=None):
+    vms = []
+    try:
+        out = run(["virsh", "domstats", "--list-active", "--vcpu", "--balloon", "--block"], timeout=DOMSTATS_TIMEOUT)
+    except Exception as e:
+        add_error(health, "virsh domstats failed: %s" % e)
+        return vms
+
+    for vm_uuid, stats in split_domstats_blocks(out):
+        vcpu_current = safe_int(stats.get("vcpu.current"), 0)
+        vcpu_time_ns = 0
+        detected_vcpus = 0
+        for k, v in stats.items():
+            if k.startswith("vcpu.") and k.endswith(".time"):
+                vcpu_time_ns += safe_int(v, 0)
+                detected_vcpus += 1
+        if vcpu_current <= 0:
+            vcpu_current = detected_vcpus
+
+        disk_read_bytes = 0
+        disk_write_bytes = 0
+        disk_read_reqs = 0
+        disk_write_reqs = 0
+        for k, v in stats.items():
+            if k.startswith("block.") and k.endswith(".rd.bytes"):
+                disk_read_bytes += safe_int(v, 0)
+            elif k.startswith("block.") and k.endswith(".wr.bytes"):
+                disk_write_bytes += safe_int(v, 0)
+            elif k.startswith("block.") and k.endswith(".rd.reqs"):
+                disk_read_reqs += safe_int(v, 0)
+            elif k.startswith("block.") and k.endswith(".wr.reqs"):
+                disk_write_reqs += safe_int(v, 0)
+
+        key = "perf:%s" % vm_uuid
+        old = state.get(key, {})
+        old_time = safe_int(old.get("time"), now_ts)
+        interval = max(1, now_ts - old_time)
+
+        cpu_time_delta_ns = delta_counter(vcpu_time_ns, old.get("vcpu_time_ns", vcpu_time_ns))
+
+        # Core-based CPU:
+        #   100% = 1 full core
+        #   400% = 4 full cores
+        cpu_core_percent = (cpu_time_delta_ns / float(interval) / 1000000000.0) * 100.0 if interval > 0 else 0.0
+        cpu_core_percent = max(0.0, cpu_core_percent)
+
+        # Normalized CPU:
+        #   100% = all assigned vCPU fully used
+        if vcpu_current > 0:
+            cpu_normalized_percent = cpu_core_percent / float(vcpu_current)
+            cpu_normalized_percent = max(0.0, min(100.0, cpu_normalized_percent))
+        else:
+            cpu_normalized_percent = 0.0
+
+        disk_read_delta = delta_counter(disk_read_bytes, old.get("disk_read_bytes", disk_read_bytes))
+        disk_write_delta = delta_counter(disk_write_bytes, old.get("disk_write_bytes", disk_write_bytes))
+        disk_read_reqs_delta = delta_counter(disk_read_reqs, old.get("disk_read_reqs", disk_read_reqs))
+        disk_write_reqs_delta = delta_counter(disk_write_reqs, old.get("disk_write_reqs", disk_write_reqs))
+
+        state[key] = {
+            "time": now_ts,
+            "vcpu_time_ns": vcpu_time_ns,
+            "disk_read_bytes": disk_read_bytes,
+            "disk_write_bytes": disk_write_bytes,
+            "disk_read_reqs": disk_read_reqs,
+            "disk_write_reqs": disk_write_reqs,
+        }
+
+        vms.append({
+            "vm_uuid": vm_uuid,
+            "vcpu_current": vcpu_current,
+
+            # Backward-compatible field used by current monitor app.
+            # This is intentionally core-based in v4.
+            "cpu_percent": round(cpu_core_percent, 2),
+
+            # Explicit fields for newer monitor app versions.
+            "cpu_core_percent": round(cpu_core_percent, 2),
+            "cpu_normalized_percent": round(cpu_normalized_percent, 2),
+
+            "ram_current_kib": safe_int(stats.get("balloon.current"), 0),
+            "ram_maximum_kib": safe_int(stats.get("balloon.maximum"), 0),
+            "ram_rss_kib": safe_int(stats.get("balloon.rss"), 0),
+            "ram_available_kib": safe_int(stats.get("balloon.available"), 0),
+            "ram_unused_kib": safe_int(stats.get("balloon.unused"), 0),
+            "ram_usable_kib": safe_int(stats.get("balloon.usable"), 0),
+            "disk_read_delta": disk_read_delta,
+            "disk_write_delta": disk_write_delta,
+            "disk_read_reqs_delta": disk_read_reqs_delta,
+            "disk_write_reqs_delta": disk_write_reqs_delta,
+        })
+    return vms
+
+
+def parse_loadavg():
+    try:
+        p = Path("/proc/loadavg").read_text().split()
+        return safe_float(p[0]), safe_float(p[1]), safe_float(p[2])
+    except Exception:
+        return 0.0, 0.0, 0.0
+
+
+def parse_meminfo():
+    vals = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if ":" not in line:
+                continue
+            k, rest = line.split(":", 1)
+            vals[k] = safe_int(rest.strip().split()[0], 0) * 1024
+    except Exception:
+        pass
+    mem_total = vals.get("MemTotal", 0)
+    mem_available = vals.get("MemAvailable", 0)
+    mem_used = max(0, mem_total - mem_available) if mem_total else 0
+    swap_total = vals.get("SwapTotal", 0)
+    swap_free = vals.get("SwapFree", 0)
+    swap_used = max(0, swap_total - swap_free) if swap_total else 0
+    return mem_total, mem_available, mem_used, swap_total, swap_used
+
+
+def parse_proc_stat_cpu():
+    try:
+        parts = Path("/proc/stat").read_text().splitlines()[0].split()
+        nums = [safe_int(x, 0) for x in parts[1:]]
+        total = sum(nums)
+        idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+        return total, idle
+    except Exception:
+        return 0, 0
+
+
+def parse_uptime_seconds():
+    try:
+        return int(float(Path("/proc/uptime").read_text().split()[0]))
+    except Exception:
+        return 0
+
+
+def collect_filesystems():
+    rows = []
+    try:
+        out = run(["df", "-P", "-T", "-B1", "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay"], timeout=20)
+    except Exception:
+        return rows
+
+    for line in out.splitlines()[1:]:
+        p = line.split()
+        if len(p) < 7:
+            continue
+        device, fstype, size, used, avail, pct, mount = p[0], p[1], safe_int(p[2]), safe_int(p[3]), safe_int(p[4]), p[5], p[6]
+
+        # Skip pseudo/noisy paths.
+        if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+            continue
+
+        # Skip file bind mounts such as /etc/hosts that can appear in containers.
+        try:
+            if not Path(mount).is_dir():
+                continue
+        except Exception:
+            pass
+
+        use_percent = safe_float(pct.strip("%"), 0.0)
+        rows.append({
+            "device": device,
+            "fstype": fstype,
+            "mount": mount,
+            "size": size,
+            "used": used,
+            "avail": avail,
+            "use_percent": use_percent,
+        })
+    return rows
+
+
+def device_to_block_name(device):
+    if not device or not device.startswith("/dev/"):
+        return None
+    try:
+        real = os.path.realpath(device)
+        name = os.path.basename(real)
+        if (Path("/sys/class/block") / name / "stat").exists():
+            return name
+    except Exception:
+        pass
+    name = os.path.basename(device)
+    if (Path("/sys/class/block") / name / "stat").exists():
+        return name
+    return None
+
+
+def read_block_bytes(block_name):
+    try:
+        parts = (Path("/sys/class/block") / block_name / "stat").read_text().split()
+        # /sys/block stat: read sectors field 3, write sectors field 7, sector = 512 bytes.
+        read_sectors = safe_int(parts[2], 0)
+        write_sectors = safe_int(parts[6], 0)
+        return read_sectors * 512, write_sectors * 512
+    except Exception:
+        return 0, 0
+
+
+def collect_node_host(state, now_ts, interval):
+    load1, load5, load15 = parse_loadavg()
+    mem_total, mem_available, mem_used, swap_total, swap_used = parse_meminfo()
+    uptime_seconds = parse_uptime_seconds()
+
+    cpu_total, cpu_idle = parse_proc_stat_cpu()
+    old_cpu = state.get("host:cpu", {})
+    old_total = safe_int(old_cpu.get("total"), cpu_total)
+    old_idle = safe_int(old_cpu.get("idle"), cpu_idle)
+    delta_total = delta_counter(cpu_total, old_total)
+    delta_idle = delta_counter(cpu_idle, old_idle)
+    cpu_percent = 0.0
+    if delta_total > 0:
+        cpu_percent = ((delta_total - delta_idle) / float(delta_total)) * 100.0
+        cpu_percent = max(0.0, min(100.0, cpu_percent))
+    state["host:cpu"] = {"total": cpu_total, "idle": cpu_idle, "time": now_ts}
+
+    filesystems = collect_filesystems()
+    block_names = sorted({device_to_block_name(fs.get("device")) for fs in filesystems})
+    block_names = [x for x in block_names if x]
+
+    disk_read_bytes = 0
+    disk_write_bytes = 0
+    for block in block_names:
+        r, w = read_block_bytes(block)
+        disk_read_bytes += r
+        disk_write_bytes += w
+
+    old_disk = state.get("host:disk", {})
+    disk_read_delta = delta_counter(disk_read_bytes, old_disk.get("read_bytes", disk_read_bytes))
+    disk_write_delta = delta_counter(disk_write_bytes, old_disk.get("write_bytes", disk_write_bytes))
+    state["host:disk"] = {"read_bytes": disk_read_bytes, "write_bytes": disk_write_bytes, "time": now_ts, "blocks": block_names}
+
+    disk_read_bps = disk_read_delta / float(interval) if interval > 0 else 0.0
+    disk_write_bps = disk_write_delta / float(interval) if interval > 0 else 0.0
+
+    return {
+        "load1": round(load1, 2),
+        "load5": round(load5, 2),
+        "load15": round(load15, 2),
+        "cpu_count": os.cpu_count() or 0,
+        "cpu_percent": round(cpu_percent, 2),
+        "mem_total": mem_total,
+        "mem_available": mem_available,
+        "mem_used": mem_used,
+        "swap_total": swap_total,
+        "swap_used": swap_used,
+        "disk_read_delta": disk_read_delta,
+        "disk_write_delta": disk_write_delta,
+        "disk_read_bps": round(disk_read_bps, 2),
+        "disk_write_bps": round(disk_write_bps, 2),
+        "uptime_seconds": uptime_seconds,
+        "filesystems": filesystems,
+    }
+
+
+def is_bridge_member_candidate_uplink(iface):
+    """Return True for physical/uplink-like bridge members.
+
+    We intentionally exclude VM tap/vnet interfaces because VM traffic is already
+    collected separately by collect_network().
+    """
+    if not iface:
+        return False
+
+    # Very common VM/tap names in libvirt/VirtFusion/KVM environments.
+    if iface.isdigit():
+        return False
+    lowered = iface.lower()
+    if lowered.startswith(("vnet", "tap", "tun", "veth", "virbr", "fwbr", "fwpr", "fwln", "qvb", "qvo", "qbr")):
+        return False
+
+    base = Path("/sys/class/net") / iface
+    if not base.exists():
+        return False
+
+    # PCI/USB physical NIC normally has /device.
+    if (base / "device").exists():
+        return True
+
+    # Bond/team/VLAN can be the real bridge uplink even without /device.
+    if Path("/proc/net/bonding").joinpath(iface).exists():
+        return True
+    if (base / "bonding").exists():
+        return True
+    if Path("/proc/net/vlan").joinpath(iface).exists():
+        return True
+
+    # VLAN/macvlan/other stacked uplinks often expose lower_* links.
+    # Keep only non-VM-looking stacked devices.
+    try:
+        lowers = list(base.glob("lower_*"))
+        if lowers and not lowered.startswith(("docker", "br-", "cni", "flannel")):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def iface_metadata(iface):
+    base = Path("/sys/class/net") / iface
+    return {
+        "operstate": read_text(base / "operstate", "-"),
+        "carrier": safe_int(read_text(base / "carrier", "0"), 0),
+        "speed_mbps": safe_int(read_text(base / "speed", "0"), 0),
+        "mtu": safe_int(read_text(base / "mtu", "0"), 0),
+        "address": read_text(base / "address", ""),
+    }
+
+
+def bridge_member_ifaces(bridge):
+    brif = Path("/sys/class/net") / bridge / "brif"
+    if not brif.exists():
+        return []
+    try:
+        return sorted([p.name for p in brif.iterdir()])
+    except Exception:
+        return []
+
+
+def collect_physical_network(state, now_ts, interval, health=None, bridge_addresses=None):
+    rows = []
+    address_map = {
+        (str(item.get("role") or "").lower(), str(item.get("bridge") or "")): item
+        for item in (bridge_addresses or [])
+        if isinstance(item, dict)
+    }
+    for role, bridge in parse_bridge_roles(BRIDGE_ROLES):
+        members = bridge_member_ifaces(bridge)
+        if not members:
+            add_error(health, "bridge has no members or does not exist: %s:%s" % (role, bridge))
+            continue
+
+        uplinks = [iface for iface in members if is_bridge_member_candidate_uplink(iface)]
+        if not uplinks:
+            add_error(health, "no physical/uplink member found for %s:%s" % (role, bridge))
+            continue
+
+        for iface in uplinks:
+            counters = collect_interface_counters(iface)
+            if not counters:
+                add_error(health, "cannot read counters for physical iface %s:%s:%s" % (role, bridge, iface))
+                continue
+
+            key = "physnet:%s:%s:%s" % (role, bridge, iface)
+            old = state.get(key, {})
+
+            rx_delta = delta_counter(counters["rx"], old.get("rx", counters["rx"]))
+            tx_delta = delta_counter(counters["tx"], old.get("tx", counters["tx"]))
+            rx_packets_delta = delta_counter(counters["rx_packets"], old.get("rx_packets", counters["rx_packets"]))
+            tx_packets_delta = delta_counter(counters["tx_packets"], old.get("tx_packets", counters["tx_packets"]))
+            rx_drop_delta = delta_counter(counters["rx_drop"], old.get("rx_drop", counters["rx_drop"]))
+            tx_drop_delta = delta_counter(counters["tx_drop"], old.get("tx_drop", counters["tx_drop"]))
+            rx_error_delta = delta_counter(counters["rx_error"], old.get("rx_error", counters["rx_error"]))
+            tx_error_delta = delta_counter(counters["tx_error"], old.get("tx_error", counters["tx_error"]))
+
+            meta = iface_metadata(iface)
+
+            row = {
+                "role": role,
+                "bridge": bridge,
+                "iface": iface,
+                "interval_seconds": interval,
+
+                # Deltas for monitor DB/history.
+                "rx_delta": rx_delta,
+                "tx_delta": tx_delta,
+                "rx_packets_delta": rx_packets_delta,
+                "tx_packets_delta": tx_packets_delta,
+                "rx_drop_delta": rx_drop_delta,
+                "tx_drop_delta": tx_drop_delta,
+                "rx_error_delta": rx_error_delta,
+                "tx_error_delta": tx_error_delta,
+
+                # Absolute counters for debugging.
+                "rx_bytes": counters["rx"],
+                "tx_bytes": counters["tx"],
+                "rx_packets": counters["rx_packets"],
+                "tx_packets": counters["tx_packets"],
+
+                # Interface metadata.
+                "operstate": meta["operstate"],
+                "carrier": meta["carrier"],
+                "speed_mbps": meta["speed_mbps"],
+                "mtu": meta["mtu"],
+                "mac": meta["address"],
+
+                # Addresses live on the Linux bridge itself (br0/br1), not
+                # necessarily on the physical member interface.
+                "bridge_ipv4": list((address_map.get((role, bridge)) or {}).get("ipv4") or []),
+                "bridge_primary_ipv4": str((address_map.get((role, bridge)) or {}).get("primary_ipv4") or ""),
+            }
+
+            state[key] = counters
+            rows.append(row)
+
+    return rows
+
+
+
+def atomic_json_write(path, payload, mode=0o600):
+    path = str(path)
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as handle:
+        json.dump(payload, handle, separators=(",", ":"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+def load_runtime():
+    try:
+        with open(RUNTIME, "r") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            raise ValueError("runtime is not a JSON object")
+    except Exception:
+        data = {}
+    if not isinstance(data.get("carry"), dict):
+        data["carry"] = empty_network_window()
+    if not isinstance(data.get("iface_map"), dict):
+        data["iface_map"] = {}
+    if data.get("pending") is not None and not isinstance(data.get("pending"), dict):
+        data["pending"] = None
+    return data
+
+
+def save_runtime(runtime):
+    atomic_json_write(RUNTIME, runtime, mode=0o600)
+
+
+def empty_network_window():
+    return {
+        "started_at": 0,
+        "ended_at": 0,
+        "ifaces": {},
+        "scan_count": 0,
+        "scan_max_ms": 0.0,
+    }
+
+
+def clean_quality(value):
+    value = str(value or "NO_DATA").strip().upper()
+    return value if value in ("GOOD", "DEGRADED", "POOR", "NO_DATA") else "NO_DATA"
+
+
+def quality_rank(value):
+    return {"NO_DATA": 0, "GOOD": 1, "DEGRADED": 2, "POOR": 3}.get(clean_quality(value), 0)
+
+
+def quality_from_counts(actual, expected, max_gap):
+    actual = max(0, safe_int(actual, 0))
+    expected = max(0, safe_int(expected, 0))
+    max_gap = max(0.0, safe_float(max_gap, 0.0))
+    if actual <= 0 or expected <= 0:
+        return "NO_DATA"
+    ratio = actual / float(expected)
+    if ratio >= 0.90 and max_gap <= SAMPLE_SECONDS * 1.75:
+        return "GOOD"
+    if ratio >= 0.70 and max_gap <= SAMPLE_SECONDS * 3.0:
+        return "DEGRADED"
+    return "POOR"
+
+
+def parse_proc_net_dev(text):
+    rows = {}
+    for raw in (text or "").splitlines():
+        if ":" not in raw:
+            continue
+        name, values = raw.split(":", 1)
+        iface = name.strip()
+        fields = values.split()
+        if not iface or len(fields) < 16:
+            continue
+        rows[iface] = {
+            "rx": safe_int(fields[0], 0),
+            "rx_packets": safe_int(fields[1], 0),
+            "rx_error": safe_int(fields[2], 0),
+            "rx_drop": safe_int(fields[3], 0),
+            "tx": safe_int(fields[8], 0),
+            "tx_packets": safe_int(fields[9], 0),
+            "tx_error": safe_int(fields[10], 0),
+            "tx_drop": safe_int(fields[11], 0),
+        }
+    return rows
+
+
+def is_vm_iface_name(iface):
+    lowered = str(iface or "").lower()
+    return bool(
+        lowered.isdigit()
+        or lowered.startswith((
+            "vnet", "tap", "tun", "fwln", "fwpr", "qvb", "qvo", "qbr"
+        ))
+    )
+
+
+def merge_iface_summary(dst, src):
+    if not isinstance(dst, dict):
+        dst = {}
+    if not isinstance(src, dict):
+        return dst
+    for key in (
+        "rx_bytes_sampled", "tx_bytes_sampled",
+        "rx_packets_sampled", "tx_packets_sampled",
+        "rx_drop_sampled", "tx_drop_sampled",
+        "rx_error_sampled", "tx_error_sampled",
+        "sample_count", "sample_expected",
+        "seconds_over_pps", "seconds_over_mbps",
+        "seconds_over_rx_pps", "seconds_over_tx_pps",
+        "seconds_over_rx_mbps", "seconds_over_tx_mbps",
+    ):
+        dst[key] = safe_float(dst.get(key), 0.0) + safe_float(src.get(key), 0.0)
+    for key in (
+        "rx_mbps_peak", "tx_mbps_peak", "total_mbps_peak",
+        "rx_pps_peak", "tx_pps_peak", "total_pps_peak",
+        "sample_max_gap_seconds",
+    ):
+        dst[key] = max(safe_float(dst.get(key), 0.0), safe_float(src.get(key), 0.0))
+    dst["first_seen"] = min(
+        [x for x in (safe_float(dst.get("first_seen"), 0), safe_float(src.get("first_seen"), 0)) if x > 0]
+        or [0]
+    )
+    dst["last_seen"] = max(safe_float(dst.get("last_seen"), 0), safe_float(src.get("last_seen"), 0))
+    dst["sample_quality"] = quality_from_counts(
+        dst.get("sample_count"), dst.get("sample_expected"), dst.get("sample_max_gap_seconds")
+    )
+    return dst
+
+
+def merge_network_windows(left, right):
+    result = empty_network_window()
+    left = left if isinstance(left, dict) else {}
+    right = right if isinstance(right, dict) else {}
+    starts = [safe_int(x, 0) for x in (left.get("started_at"), right.get("started_at")) if safe_int(x, 0) > 0]
+    result["started_at"] = min(starts) if starts else 0
+    result["ended_at"] = max(safe_int(left.get("ended_at"), 0), safe_int(right.get("ended_at"), 0))
+    result["scan_count"] = safe_int(left.get("scan_count"), 0) + safe_int(right.get("scan_count"), 0)
+    result["scan_max_ms"] = max(safe_float(left.get("scan_max_ms"), 0), safe_float(right.get("scan_max_ms"), 0))
+    for source in (left.get("ifaces") or {}, right.get("ifaces") or {}):
+        if not isinstance(source, dict):
+            continue
+        for iface, summary in source.items():
+            result["ifaces"][str(iface)] = merge_iface_summary(result["ifaces"].get(str(iface), {}), summary)
+    return result
+
+
+class NetworkSampler:
+    """Bounded in-memory sampler. It never stores a list of individual samples."""
+
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.last = {}
+        self.active = {}
+        self.known_ifaces = set()
+        self.window_started_mono = time.monotonic()
+        self.window_started_wall = int(time.time())
+        self.scan_count = 0
+        self.scan_max_ms = 0.0
+
+    def update_known_ifaces(self, iface_map):
+        with self.lock:
+            self.known_ifaces = {str(x) for x in (iface_map or {}) if str(x)}
+
+    def _candidate(self, iface):
+        return iface in self.known_ifaces or is_vm_iface_name(iface)
+
+    def sample(self):
+        scan_start = time.monotonic()
+        now_mono = scan_start
+        now_wall = time.time()
+        try:
+            counters = parse_proc_net_dev(Path("/proc/net/dev").read_text())
+        except Exception:
+            return False
+
+        with self.lock:
+            self.scan_count += 1
+            for iface, current in counters.items():
+                if not self._candidate(iface):
+                    continue
+                previous = self.last.get(iface)
+                if previous:
+                    elapsed = now_mono - safe_float(previous.get("mono"), now_mono)
+                    # Ignore an accidental near-simultaneous force sample.
+                    if elapsed >= 1.0:
+                        rec = self.active.setdefault(iface, {
+                            "rx_bytes_sampled": 0,
+                            "tx_bytes_sampled": 0,
+                            "rx_packets_sampled": 0,
+                            "tx_packets_sampled": 0,
+                            "rx_drop_sampled": 0,
+                            "tx_drop_sampled": 0,
+                            "rx_error_sampled": 0,
+                            "tx_error_sampled": 0,
+                            "rx_mbps_peak": 0.0,
+                            "tx_mbps_peak": 0.0,
+                            "total_mbps_peak": 0.0,
+                            "rx_pps_peak": 0.0,
+                            "tx_pps_peak": 0.0,
+                            "total_pps_peak": 0.0,
+                            "sample_count": 0,
+                            "sample_max_gap_seconds": 0.0,
+                            "seconds_over_pps": 0.0,
+                            "seconds_over_mbps": 0.0,
+                            "seconds_over_rx_pps": 0.0,
+                            "seconds_over_tx_pps": 0.0,
+                            "seconds_over_rx_mbps": 0.0,
+                            "seconds_over_tx_mbps": 0.0,
+                            "first_seen": safe_float(previous.get("wall"), now_wall),
+                            "last_seen": now_wall,
+                        })
+                        deltas = {}
+                        for key in ("rx", "tx", "rx_packets", "tx_packets", "rx_drop", "tx_drop", "rx_error", "tx_error"):
+                            deltas[key] = delta_counter(current.get(key), previous.get(key, current.get(key)))
+                        rx_mbps = deltas["rx"] * 8.0 / elapsed / 1000000.0
+                        tx_mbps = deltas["tx"] * 8.0 / elapsed / 1000000.0
+                        rx_pps = deltas["rx_packets"] / elapsed
+                        tx_pps = deltas["tx_packets"] / elapsed
+                        rec["rx_bytes_sampled"] += deltas["rx"]
+                        rec["tx_bytes_sampled"] += deltas["tx"]
+                        rec["rx_packets_sampled"] += deltas["rx_packets"]
+                        rec["tx_packets_sampled"] += deltas["tx_packets"]
+                        rec["rx_drop_sampled"] += deltas["rx_drop"]
+                        rec["tx_drop_sampled"] += deltas["tx_drop"]
+                        rec["rx_error_sampled"] += deltas["rx_error"]
+                        rec["tx_error_sampled"] += deltas["tx_error"]
+                        total_mbps = rx_mbps + tx_mbps
+                        total_pps = rx_pps + tx_pps
+                        rec["rx_mbps_peak"] = max(rec["rx_mbps_peak"], rx_mbps)
+                        rec["tx_mbps_peak"] = max(rec["tx_mbps_peak"], tx_mbps)
+                        rec["total_mbps_peak"] = max(rec["total_mbps_peak"], total_mbps)
+                        rec["rx_pps_peak"] = max(rec["rx_pps_peak"], rx_pps)
+                        rec["tx_pps_peak"] = max(rec["tx_pps_peak"], tx_pps)
+                        rec["total_pps_peak"] = max(rec["total_pps_peak"], total_pps)
+                        rec["sample_count"] += 1
+                        rec["sample_max_gap_seconds"] = max(rec["sample_max_gap_seconds"], elapsed)
+                        rec["last_seen"] = now_wall
+                        if max(rx_pps, tx_pps) >= PPS_WARN > 0:
+                            rec["seconds_over_pps"] += elapsed
+                        if rx_pps >= PPS_WARN > 0:
+                            rec["seconds_over_rx_pps"] += elapsed
+                        if tx_pps >= PPS_WARN > 0:
+                            rec["seconds_over_tx_pps"] += elapsed
+                        if max(rx_mbps, tx_mbps) >= MBPS_WARN > 0:
+                            rec["seconds_over_mbps"] += elapsed
+                        if rx_mbps >= MBPS_WARN > 0:
+                            rec["seconds_over_rx_mbps"] += elapsed
+                        if tx_mbps >= MBPS_WARN > 0:
+                            rec["seconds_over_tx_mbps"] += elapsed
+                current_copy = dict(current)
+                current_copy["mono"] = now_mono
+                current_copy["wall"] = now_wall
+                current_copy["last_seen_mono"] = now_mono
+                self.last[iface] = current_copy
+
+            # Bound memory when VM tap names churn over time.
+            stale = [
+                iface for iface, item in self.last.items()
+                if now_mono - safe_float(item.get("last_seen_mono"), now_mono) > STALE_IFACE_SECONDS
+            ]
+            for iface in stale:
+                self.last.pop(iface, None)
+                self.active.pop(iface, None)
+
+            scan_ms = (time.monotonic() - scan_start) * 1000.0
+            self.scan_max_ms = max(self.scan_max_ms, scan_ms)
+        return True
+
+    def rotate(self):
+        # Take one near-boundary sample so the 5-minute window is not blurred.
+        self.sample()
+        now_mono = time.monotonic()
+        now_wall = int(time.time())
+        with self.lock:
+            result = empty_network_window()
+            result["started_at"] = self.window_started_wall
+            result["ended_at"] = now_wall
+            result["scan_count"] = self.scan_count
+            result["scan_max_ms"] = round(self.scan_max_ms, 3)
+            for iface, rec in self.active.items():
+                item = copy.deepcopy(rec)
+                first_mono = max(self.window_started_mono, now_mono - max(0.0, now_wall - safe_float(item.get("first_seen"), now_wall)))
+                effective = max(0.0, now_mono - first_mono)
+                expected = max(1, int(round(effective / float(SAMPLE_SECONDS)))) if effective >= 1 else 1
+                item["sample_expected"] = expected
+                item["sample_quality"] = quality_from_counts(
+                    item.get("sample_count"), expected, item.get("sample_max_gap_seconds")
+                )
+                result["ifaces"][iface] = item
+            self.active = {}
+            self.window_started_mono = now_mono
+            self.window_started_wall = now_wall
+            self.scan_count = 0
+            self.scan_max_ms = 0.0
+            return result
+
+    def health(self):
+        with self.lock:
+            return {
+                "sample_seconds": SAMPLE_SECONDS,
+                "tracked_ifaces": len(self.last),
+                "active_ifaces": len(self.active),
+                "scan_count": self.scan_count,
+                "scan_max_ms": round(self.scan_max_ms, 3),
+            }
+
+
+def sampler_loop(sampler):
+    sampler.sample()  # baseline
+    deadline = time.monotonic() + SAMPLE_SECONDS
+    while not STOP_EVENT.is_set():
+        wait = deadline - time.monotonic()
+        if wait > 0 and STOP_EVENT.wait(wait):
+            break
+        if STOP_EVENT.is_set():
+            break
+        sampler.sample()
+        deadline += SAMPLE_SECONDS
+        now = time.monotonic()
+        # Never run a burst of catch-up scans after overload/suspend.
+        if deadline < now:
+            deadline = now + SAMPLE_SECONDS
+
+
+def build_iface_map(rows):
+    mapping = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        iface = str(row.get("iface") or "").strip()
+        vm_uuid = str(row.get("vm_uuid") or "").strip()
+        if not iface or not vm_uuid:
+            continue
+        mapping[iface] = {
+            "vm_uuid": vm_uuid,
+            "bridge": str(row.get("bridge") or "-"),
+            "mac": str(row.get("mac") or ""),
+        }
+    return mapping
+
+
+def collect_network_from_mapping(iface_map, state, health=None):
+    rows = []
+    for iface, meta in sorted((iface_map or {}).items()):
+        if not isinstance(meta, dict):
+            continue
+        vm_uuid = str(meta.get("vm_uuid") or "").strip()
+        if not vm_uuid:
+            continue
+        counters = collect_interface_counters(iface)
+        if not counters:
+            continue
+        key = "net:%s:%s" % (vm_uuid, iface)
+        old = state.get(key, {})
+        row = {
+            "vm_uuid": vm_uuid,
+            "iface": iface,
+            "bridge": str(meta.get("bridge") or "-"),
+            "mac": str(meta.get("mac") or ""),
+            "rx_delta": delta_counter(counters["rx"], old.get("rx", counters["rx"])),
+            "tx_delta": delta_counter(counters["tx"], old.get("tx", counters["tx"])),
+            "rx_packets_delta": delta_counter(counters["rx_packets"], old.get("rx_packets", counters["rx_packets"])),
+            "tx_packets_delta": delta_counter(counters["tx_packets"], old.get("tx_packets", counters["tx_packets"])),
+            "rx_drop_delta": delta_counter(counters["rx_drop"], old.get("rx_drop", counters["rx_drop"])),
+            "tx_drop_delta": delta_counter(counters["tx_drop"], old.get("tx_drop", counters["tx_drop"])),
+            "rx_error_delta": delta_counter(counters["rx_error"], old.get("rx_error", counters["rx_error"])),
+            "tx_error_delta": delta_counter(counters["tx_error"], old.get("tx_error", counters["tx_error"])),
+        }
+        state[key] = counters
+        rows.append(row)
+    return rows
+
+
+def hydrate_network_rows(rows, network_window, interval_seconds):
+    summaries = (network_window or {}).get("ifaces") or {}
+    result = []
+    interval_seconds = max(1, safe_int(interval_seconds, PUSH_SECONDS))
+    for source in rows or []:
+        if not isinstance(source, dict):
+            continue
+        row = dict(source)
+        iface = str(row.get("iface") or "")
+        summary = summaries.get(iface) if isinstance(summaries, dict) else None
+        summary = summary if isinstance(summary, dict) else {}
+        rx_delta = max(0, safe_int(row.get("rx_delta"), 0))
+        tx_delta = max(0, safe_int(row.get("tx_delta"), 0))
+        rx_packets = max(0, safe_int(row.get("rx_packets_delta"), 0))
+        tx_packets = max(0, safe_int(row.get("tx_packets_delta"), 0))
+        rx_avg_mbps = rx_delta * 8.0 / interval_seconds / 1000000.0
+        tx_avg_mbps = tx_delta * 8.0 / interval_seconds / 1000000.0
+        rx_avg_pps = rx_packets / float(interval_seconds)
+        tx_avg_pps = tx_packets / float(interval_seconds)
+        sample_count = max(0, safe_int(summary.get("sample_count"), 0))
+        sample_expected = max(0, safe_int(summary.get("sample_expected"), 0))
+        max_gap = max(0.0, safe_float(summary.get("sample_max_gap_seconds"), 0.0))
+        quality = clean_quality(summary.get("sample_quality"))
+        row.update({
+            "interval_seconds": interval_seconds,
+            # Peak cannot be lower than the exact whole-window average.
+            "rx_mbps_peak": round(max(rx_avg_mbps, safe_float(summary.get("rx_mbps_peak"), 0.0)), 3),
+            "tx_mbps_peak": round(max(tx_avg_mbps, safe_float(summary.get("tx_mbps_peak"), 0.0)), 3),
+            "total_mbps_peak": round(max(rx_avg_mbps + tx_avg_mbps, safe_float(summary.get("total_mbps_peak"), 0.0)), 3),
+            "rx_pps_peak": round(max(rx_avg_pps, safe_float(summary.get("rx_pps_peak"), 0.0)), 3),
+            "tx_pps_peak": round(max(tx_avg_pps, safe_float(summary.get("tx_pps_peak"), 0.0)), 3),
+            "total_pps_peak": round(max(rx_avg_pps + tx_avg_pps, safe_float(summary.get("total_pps_peak"), 0.0)), 3),
+            "rx_packet_size_avg": round(rx_delta / float(rx_packets), 2) if rx_packets > 0 else 0.0,
+            "tx_packet_size_avg": round(tx_delta / float(tx_packets), 2) if tx_packets > 0 else 0.0,
+            "network_sample_count": sample_count,
+            "network_sample_expected": sample_expected,
+            "network_sample_max_gap_seconds": round(max_gap, 3),
+            "network_sample_quality": quality,
+            "pps_warn_threshold": round(PPS_WARN, 3),
+            "seconds_over_pps": int(round(max(0.0, safe_float(summary.get("seconds_over_pps"), 0.0)))),
+            "seconds_over_mbps": int(round(max(0.0, safe_float(summary.get("seconds_over_mbps"), 0.0)))),
+            "seconds_over_rx_pps": int(round(max(0.0, safe_float(summary.get("seconds_over_rx_pps"), 0.0)))),
+            "seconds_over_tx_pps": int(round(max(0.0, safe_float(summary.get("seconds_over_tx_pps"), 0.0)))),
+            "seconds_over_rx_mbps": int(round(max(0.0, safe_float(summary.get("seconds_over_rx_mbps"), 0.0)))),
+            "seconds_over_tx_mbps": int(round(max(0.0, safe_float(summary.get("seconds_over_tx_mbps"), 0.0)))),
+        })
+        result.append(row)
+    return result
+
+
+def prune_metric_state(state, active_network_keys=None, active_vm_uuids=None, inventory_complete=False):
+    if not inventory_complete:
+        return
+    active_network_keys = set(active_network_keys or [])
+    active_vm_uuids = set(active_vm_uuids or [])
+    for key in list(state):
+        if key.startswith("net:") and key not in active_network_keys:
+            state.pop(key, None)
+        elif key.startswith("perf:") and key.split(":", 1)[1] not in active_vm_uuids:
+            state.pop(key, None)
+
+
+def collect_cycle_payload(committed_state, runtime, network_window):
+    agent_start_mono = time.monotonic()
+    now_ts = int(time.time())
+    state = copy.deepcopy(committed_state or {})
+    last_payload_time = safe_int(state.get("_last_payload_time"), 0)
+    interval = now_ts - last_payload_time if last_payload_time > 0 else PUSH_SECONDS
+    if interval <= 0:
+        interval = PUSH_SECONDS
+
+    health = {
+        "version": AGENT_VERSION,
+        "started_at": now_ts,
+        "duration_ms": 0,
+        "timings": {},
+        "counts": {},
+        "errors": [],
+        "network_sampler": {
+            "sample_seconds": SAMPLE_SECONDS,
+            "window_started_at": safe_int((network_window or {}).get("started_at"), 0),
+            "window_ended_at": safe_int((network_window or {}).get("ended_at"), 0),
+            "scan_count": safe_int((network_window or {}).get("scan_count"), 0),
+            "scan_max_ms": safe_float((network_window or {}).get("scan_max_ms"), 0.0),
+            "pps_warn": PPS_WARN,
+        },
+    }
+
+    load1, _load5, _load15 = parse_loadavg()
+    load_high = MAX_LOAD > 0 and load1 > MAX_LOAD
+    heavy_collection_skipped = bool(load_high and SKIP_HEAVY_ON_OVERLOAD)
+    cached_map = runtime.get("iface_map") if isinstance(runtime.get("iface_map"), dict) else {}
+
+    if heavy_collection_skipped:
+        add_error(health, "heavy collection skipped by explicit setting: load1=%.2f is above limit=%.2f" % (load1, MAX_LOAD))
+        vm_names = sorted({str(x.get("vm_uuid")) for x in cached_map.values() if isinstance(x, dict) and x.get("vm_uuid")})
+        inventory_complete = False
+        t = time.monotonic()
+        interfaces = collect_network_from_mapping(cached_map, state, health=health) if COLLECT_VM_NET else []
+        health["timings"]["vm_network_ms"] = ms_since(t)
+        vms = []
+        health["timings"]["virsh_list_ms"] = 0
+        health["timings"]["vm_perf_ms"] = 0
+    else:
+        if load_high:
+            add_error(health, "high load detected but full metrics preserved: load1=%.2f limit=%.2f" % (load1, MAX_LOAD))
+        t = time.monotonic()
+        vm_names, inventory_complete = get_vm_names(health=health)
+        health["timings"]["virsh_list_ms"] = ms_since(t)
+
+        t = time.monotonic()
+        interfaces = collect_network(vm_names, state, health=health) if COLLECT_VM_NET else []
+        health["timings"]["vm_network_ms"] = ms_since(t)
+
+        t = time.monotonic()
+        vms = collect_vm_perf(state, now_ts, health=health) if COLLECT_VM_PERF else []
+        health["timings"]["vm_perf_ms"] = ms_since(t)
+
+        new_map = build_iface_map(interfaces)
+        if new_map or inventory_complete:
+            runtime["iface_map"] = new_map
+            cached_map = new_map
+        prune_metric_state(
+            state,
+            active_network_keys={"net:%s:%s" % (row.get("vm_uuid"), row.get("iface")) for row in interfaces if isinstance(row, dict)},
+            active_vm_uuids=set(vm_names),
+            inventory_complete=inventory_complete,
+        )
+
+    interfaces = hydrate_network_rows(interfaces, network_window, interval)
+
+    t = time.monotonic()
+    node_host = collect_node_host(state, now_ts, interval) if COLLECT_NODE_HOST else {}
+    health["timings"]["node_host_ms"] = ms_since(t)
+
+    t = time.monotonic()
+    bridge_addresses = collect_bridge_addresses(health=health)
+    health["timings"]["bridge_addresses_ms"] = ms_since(t)
+
+    t = time.monotonic()
+    physical_interfaces = collect_physical_network(
+        state, now_ts, interval, health=health, bridge_addresses=bridge_addresses
+    ) if COLLECT_PHYSICAL_NET else []
+    health["timings"]["physical_network_ms"] = ms_since(t)
+
+    state["_last_payload_time"] = now_ts
+    health["counts"] = {
+        "vm_names": len(vm_names),
+        "inventory_complete": 1 if inventory_complete else 0,
+        "interfaces": len(interfaces),
+        "vms": len(vms),
+        "physical_interfaces": len(physical_interfaces),
+        "bridge_addresses": len(bridge_addresses),
+        "filesystems": len(node_host.get("filesystems", [])) if isinstance(node_host, dict) else 0,
+        "network_sampled_interfaces": len((network_window or {}).get("ifaces") or {}),
+    }
+    health["duration_ms"] = ms_since(agent_start_mono)
+    health["overloaded"] = load_high
+    health["load_high"] = load_high
+    health["heavy_collection_skipped"] = heavy_collection_skipped
+    health["load1_at_cycle"] = round(load1, 2)
+
+    payload = {
+        "version": AGENT_VERSION,
+        "node": NODE_NAME,
+        "time": now_ts,
+        "interval": interval,
+        "interfaces": interfaces,
+        "vms": vms,
+        "node_host": node_host,
+        "vm_inventory": vm_names,
+        "inventory_complete": inventory_complete,
+        "physical_interfaces": physical_interfaces,
+        "bridge_addresses": bridge_addresses,
+        "agent_health": health,
+        "network_sampler": health["network_sampler"],
+    }
+    return payload, state
+
+
+def send_pending(runtime):
+    pending = runtime.get("pending")
+    if not isinstance(pending, dict):
+        return True, None
+    payload = pending.get("payload")
+    state_after = pending.get("state_after")
+    if not isinstance(payload, dict) or not isinstance(state_after, dict):
+        runtime["pending"] = None
+        save_runtime(runtime)
+        return True, None
+    response_text = post_payload(payload)
+    apply_monitor_config(response_text, runtime)
+    save_state(state_after)
+    runtime["pending"] = None
+    save_runtime(runtime)
+    return True, state_after
+
+
+def run_push_cycle(sampler, runtime, committed_state):
+    frozen = sampler.rotate()
+    runtime["carry"] = merge_network_windows(runtime.get("carry"), frozen)
+    save_runtime(runtime)
+
+    # Retry the exact old payload first. The monitor de-duplicates node+time.
+    if isinstance(runtime.get("pending"), dict):
+        try:
+            _ok, new_state = send_pending(runtime)
+            if new_state is not None:
+                committed_state = new_state
+        except Exception as exc:
+            if not QUIET:
+                print("bwagent pending push failed: %s" % exc, flush=True)
+            return committed_state
+
+    payload, state_after = collect_cycle_payload(committed_state, runtime, runtime.get("carry"))
+    if DRY_RUN:
+        print(json.dumps(payload, indent=2))
+        STOP_EVENT.set()
+        return committed_state
+
+    # One atomic runtime update moves carry into a durable pending payload.
+    runtime["pending"] = {
+        "payload": payload,
+        "state_after": state_after,
+        "created_at": int(time.time()),
+    }
+    runtime["carry"] = empty_network_window()
+    save_runtime(runtime)
+
+    try:
+        _ok, new_state = send_pending(runtime)
+        if new_state is not None:
+            committed_state = new_state
+        if not QUIET:
+            quality_counts = {}
+            for item in payload.get("interfaces") or []:
+                quality = clean_quality(item.get("network_sample_quality"))
+                quality_counts[quality] = quality_counts.get(quality, 0) + 1
+            print(
+                "bwagent push ok node=%s interfaces=%s vms=%s host=%s overloaded=%s skipped=%s errors=%s samples=%s" % (
+                    NODE_NAME,
+                    len(payload.get("interfaces") or []),
+                    len(payload.get("vms") or []),
+                    1 if bool(payload.get("node_host")) else 0,
+                    1 if payload.get("agent_health", {}).get("overloaded") else 0,
+                    1 if payload.get("agent_health", {}).get("heavy_collection_skipped") else 0,
+                    len(payload.get("agent_health", {}).get("errors") or []),
+                    quality_counts,
+                ),
+                flush=True,
+            )
+            health_errors = payload.get("agent_health", {}).get("errors") or []
+            if health_errors:
+                print("bwagent health warnings: %s" % " | ".join(str(x) for x in health_errors[:10]), flush=True)
+    except Exception as exc:
+        if not QUIET:
+            print("bwagent push failed, payload kept for retry: %s" % exc, flush=True)
+    return committed_state
+
+
+def next_wall_boundary(now=None):
+    now = time.time() if now is None else float(now)
+    return (int(now) // PUSH_SECONDS + 1) * PUSH_SECONDS
+
+
+def handle_signal(_signum, _frame):
+    STOP_EVENT.set()
+
+def apply_monitor_config(response_text, runtime):
+    """Apply monitor-returned agent config and persist it in runtime.json.
+
+    The monitor returns the current network PPS threshold after every successful
+    push. The sampler then uses it for the next complete five-minute window, so
+    Admin threshold changes do not require redeploying every node.
+    """
+    global PPS_WARN
+    try:
+        payload = json.loads(response_text or "{}")
+        cfg = payload.get("agent_config") if isinstance(payload, dict) else None
+        if not isinstance(cfg, dict):
+            return False
+        pps_warn = max(0.0, safe_float(cfg.get("pps_warn"), PPS_WARN))
+        revision = max(0, safe_int(cfg.get("revision"), 0))
+        PPS_WARN = pps_warn
+        runtime["monitor_config"] = {
+            "pps_warn": pps_warn,
+            "revision": revision,
+            "network_enabled": bool(cfg.get("network_enabled", pps_warn > 0)),
+            "received_at": int(time.time()),
+        }
+        save_runtime(runtime)
+        return True
+    except Exception:
+        return False
+
+
+def restore_monitor_config(runtime):
+    global PPS_WARN
+    cfg = runtime.get("monitor_config") if isinstance(runtime, dict) else None
+    if not isinstance(cfg, dict):
+        return
+    PPS_WARN = max(0.0, safe_float(cfg.get("pps_warn"), PPS_WARN))
+
+
+def post_payload(payload):
+    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    req = urllib.request.Request(
+        API,
+        data=data,
+        headers={"Content-Type": "application/json", "X-Token": TOKEN},
+    )
+    return urllib.request.urlopen(req, timeout=API_TIMEOUT).read().decode()
+
+
+def main():
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    runtime = load_runtime()
+    restore_monitor_config(runtime)
+    committed_state = load_state()
+    sampler = NetworkSampler()
+    sampler.update_known_ifaces(runtime.get("iface_map") or {})
+    thread = threading.Thread(target=sampler_loop, args=(sampler,), name="bwagent-net", daemon=True)
+    thread.start()
+
+    # Give the sampler a baseline, then publish current heavy metrics immediately.
+    STOP_EVENT.wait(0.5)
+    committed_state = run_push_cycle(sampler, runtime, committed_state)
+    sampler.update_known_ifaces(runtime.get("iface_map") or {})
+
+    boundary = next_wall_boundary()
+    while not STOP_EVENT.is_set():
+        wait = max(0.0, boundary - time.time())
+        if STOP_EVENT.wait(wait):
+            break
+        committed_state = run_push_cycle(sampler, runtime, committed_state)
+        sampler.update_known_ifaces(runtime.get("iface_map") or {})
+        boundary += PUSH_SECONDS
+        now = time.time()
+        if boundary <= now:
+            boundary = next_wall_boundary(now)
+
+    # Preserve the partial network window on a graceful stop without creating a push.
+    try:
+        frozen = sampler.rotate()
+        runtime["carry"] = merge_network_windows(runtime.get("carry"), frozen)
+        save_runtime(runtime)
+    except Exception:
+        pass
+    thread.join(timeout=2)
+
+
+if __name__ == "__main__":
+    main()

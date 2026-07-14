@@ -1,0 +1,70 @@
+BW Monitor v48.12.9-r4 Migration Notes
+======================================
+
+Source version
+--------------
+Upgrade from v48.12.8-r1 or any earlier compatible v48 release.
+
+Database migration
+------------------
+No destructive schema migration is introduced by v48.12.9.
+
+The release reuses:
+
+- vm_abuse_state
+- vm_abuse_events
+- vm_abuse_incidents
+- existing metrics/current/inventory tables
+- API tables
+- maintenance/retention tables
+
+Normal installation does not clear Abuse data.
+
+Behavior changes
+----------------
+
+1. Current Abuse table
+
+The final Dashboard renderer is vm_abuse_page_v48129. It replaces the visual
+layout only and reads the same bounded vm_abuse_state table.
+
+2. History cleanup
+
+The final clear_abuse_events endpoint is clear_abuse_events_v48129.
+
+Clear All Abuse Logs:
+
+- Clears vm_abuse_events
+- Clears vm_abuse_incidents
+- Does not clear vm_abuse_state
+
+Clear Matching / Selected:
+
+- Clears selected raw rows
+- Rebuilds vm_abuse_incidents from remaining raw history
+
+3. Explicit reset
+
+RESET ALL ABUSE DATA clears:
+
+- vm_abuse_state
+- vm_abuse_events
+- vm_abuse_incidents
+
+It does not clear metrics, inventory, users, API keys or Agent state.
+
+4. Active VM behavior
+
+A VM that still exceeds policy can reappear after its configured sustained
+window. This is expected and preserves monitoring truth.
+
+5. Agent
+
+No Agent redeployment is required. Agent v10 already supplies the required
+network, CPU, RAM and disk metrics.
+
+6. API
+
+No REST API endpoint or scope is removed. Summary/raw endpoints remain for
+client compatibility even though Dashboard only exposes Current Abuse and
+Abuse Events.

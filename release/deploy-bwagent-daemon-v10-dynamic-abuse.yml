@@ -1,0 +1,226 @@
+---
+- name: Deploy BW Agent v10 daemon with dynamic abuse policy sync
+  hosts: all
+  gather_facts: false
+  become: false
+  serial: 5
+
+  vars:
+    # Current monitor endpoint/token. Change here if your monitor uses another address.
+    bwagent_api: "http://103.199.19.207:8080/push"
+    bwagent_token: "123456"
+
+    bwagent_python: /usr/bin/python3
+    bwagent_install_dir: /usr/local/lib/bwagent
+    bwagent_script: /usr/local/lib/bwagent/agent.py
+    bwagent_state_dir: /var/lib/bw-agent
+    bwagent_state_file: /var/lib/bw-agent/state.json
+    bwagent_runtime_file: /var/lib/bw-agent/runtime.json
+    bwagent_env_file: /etc/bwagent.env
+    bwagent_service_file: /etc/systemd/system/bwagent.service
+
+    # Local network sample every 15 seconds, one HTTP push every 5 minutes.
+    bwagent_sample_seconds: 15
+    bwagent_push_seconds: 300
+    bwagent_max_load: 160
+    # 0 = keep old behavior and always collect full CPU/RAM/disk metrics.
+    # High load is still reported in agent_health, but metrics are not silently omitted.
+    bwagent_skip_heavy_on_overload: 0
+
+    # Startup fallback only. Agent v10 receives the live PPS threshold from the monitor after every successful push.
+    bwagent_pps_warn: 200000
+    bwagent_mbps_warn: 800
+
+  pre_tasks:
+    - name: Check root access and required commands
+      ansible.builtin.shell: |
+        set -e
+        test "$(id -u)" = "0"
+        command -v python3
+        command -v virsh
+        command -v ip
+        command -v df
+        command -v systemctl
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Validate local agent source exists on Ansible controller
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/bwagent_daemon_v10_dynamic_abuse.py"
+      delegate_to: localhost
+      become: false
+      register: local_agent
+
+    - name: Refuse deployment without local agent source
+      ansible.builtin.assert:
+        that:
+          - local_agent.stat.exists
+        fail_msg: >-
+          Put bwagent_daemon_v10_dynamic_abuse.py in the same directory as this playbook.
+
+  tasks:
+    - name: Stop and disable old timer/service units
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - bwagent.timer
+        - bwagent.service
+        - bw-agent.timer
+        - bw-agent.service
+      failed_when: false
+
+    - name: Remove old timer units and load-check helpers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/bwagent.timer
+        - /etc/systemd/system/bw-agent.timer
+        - /lib/systemd/system/bwagent.timer
+        - /lib/systemd/system/bw-agent.timer
+        - /usr/local/sbin/bwagent-load-check
+        - /usr/local/sbin/bw-agent-load-check
+
+    - name: Create agent directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ bwagent_install_dir }}", mode: "0755" }
+        - { path: "{{ bwagent_state_dir }}", mode: "0700" }
+
+    - name: Install BW Agent v10 daemon with dynamic abuse sync
+      ansible.builtin.copy:
+        src: bwagent_daemon_v10_dynamic_abuse.py
+        dest: "{{ bwagent_script }}"
+        owner: root
+        group: root
+        mode: "0755"
+        backup: true
+
+    - name: Validate Python syntax before starting service
+      ansible.builtin.command:
+        argv:
+          - "{{ bwagent_python }}"
+          - -m
+          - py_compile
+          - "{{ bwagent_script }}"
+      changed_when: false
+
+    - name: Write BW Agent environment
+      ansible.builtin.copy:
+        dest: "{{ bwagent_env_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          BW_AGENT_API={{ bwagent_api }}
+          BW_AGENT_TOKEN={{ bwagent_token }}
+          BW_AGENT_STATE={{ bwagent_state_file }}
+          BW_AGENT_RUNTIME={{ bwagent_runtime_file }}
+          BW_AGENT_SAMPLE_SECONDS={{ bwagent_sample_seconds }}
+          BW_AGENT_PUSH_SECONDS={{ bwagent_push_seconds }}
+          BW_AGENT_MAX_LOAD={{ bwagent_max_load }}
+          BW_AGENT_SKIP_HEAVY_ON_OVERLOAD={{ bwagent_skip_heavy_on_overload }}
+          BW_AGENT_PPS_WARN={{ bwagent_pps_warn }}
+          BW_AGENT_MBPS_WARN={{ bwagent_mbps_warn }}
+          BW_AGENT_STALE_IFACE_SECONDS=600
+          BW_AGENT_COLLECT_VM_NET=1
+          BW_AGENT_COLLECT_VM_PERF=1
+          BW_AGENT_COLLECT_NODE_HOST=1
+          BW_AGENT_COLLECT_PHYSICAL_NET=1
+          BW_AGENT_BRIDGE_ROLES=public:br0,private:br1
+          BW_AGENT_API_TIMEOUT=15
+          BW_AGENT_DOMSTATS_TIMEOUT=180
+          BW_AGENT_VIRSH_LIST_TIMEOUT=30
+          BW_AGENT_DOMIFLIST_TIMEOUT=30
+          BW_AGENT_QUIET=0
+      no_log: true
+
+    - name: Install the single persistent systemd service
+      ansible.builtin.copy:
+        dest: "{{ bwagent_service_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=BW Monitor Agent v10 daemon dynamic abuse sync
+          Wants=network-online.target
+          After=network-online.target libvirtd.service
+          ConditionPathExists={{ bwagent_script }}
+
+          [Service]
+          Type=simple
+          User=root
+          Group=root
+          EnvironmentFile={{ bwagent_env_file }}
+          ExecStart={{ bwagent_python }} {{ bwagent_script }}
+          Restart=always
+          RestartSec=5
+          Nice=10
+          IOSchedulingClass=idle
+          MemoryHigh=256M
+          MemoryMax=512M
+          TimeoutStopSec=30
+          KillSignal=SIGTERM
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Reset old failed unit state
+      ansible.builtin.command:
+        cmd: systemctl reset-failed
+      changed_when: false
+      failed_when: false
+
+    - name: Enable and restart the single agent service
+      ansible.builtin.systemd:
+        name: bwagent.service
+        enabled: true
+        state: restarted
+
+    - name: Wait for agent process to stay active
+      ansible.builtin.command:
+        cmd: systemctl is-active bwagent.service
+      register: service_state
+      retries: 6
+      delay: 2
+      until: service_state.stdout == "active"
+      changed_when: false
+
+    - name: Confirm old timer is not active
+      ansible.builtin.command:
+        cmd: systemctl is-active bwagent.timer
+      register: timer_state
+      changed_when: false
+      failed_when: timer_state.stdout == "active"
+
+    - name: Read service memory and PID
+      ansible.builtin.command:
+        cmd: >-
+          systemctl show bwagent.service
+          -p MainPID -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax
+      register: service_metrics
+      changed_when: false
+
+    - name: Show deployment result
+      ansible.builtin.debug:
+        msg:
+          - "bwagent.service={{ service_state.stdout }}"
+          - "bwagent.timer={{ timer_state.stdout | default('inactive/not-found') }}"
+          - "Local sample={{ bwagent_sample_seconds }}s; HTTP push={{ bwagent_push_seconds }}s"
+          - "{{ service_metrics.stdout }}"
+          - "Logs: journalctl -u bwagent.service -n 50 --no-pager"

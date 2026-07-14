@@ -1,0 +1,31 @@
+BW Monitor v48.12.9-r3 UI Notes
+================================
+
+Scope
+-----
+Current Abuse CPU and RAM cells were simplified to match the compact Top VM visual language requested for operations use.
+
+CPU cell
+--------
+- Large CPU Core percentage centered on top
+- CPU Full percentage and exact sustained minutes shown on one line
+- Progress bar is always CPU Full / assigned vCPU capacity
+- Assigned vCPU count shown in the footer
+- Header still sorts independently by Full % or Core %
+
+RAM cell
+--------
+- Large Guest Used / Assigned value centered on top
+- Guest Used percentage shown on the second line
+- Progress bar is always Guest Used / Assigned for stable visual comparison
+- Host RSS shown in the footer
+- Header still sorts independently by Guest %, Used GiB, Host RSS, or Assigned
+
+Impact
+------
+- UI-only change
+- No database migration
+- No Agent deployment
+- No API change
+- No Abuse state reset
+- No retention-policy change

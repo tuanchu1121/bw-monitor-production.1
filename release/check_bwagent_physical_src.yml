@@ -1,0 +1,35 @@
+---
+- name: Check BW Agent physical NIC source collection
+  hosts: all
+  gather_facts: false
+  become: false
+  serial: 20
+
+  tasks:
+    - name: Inspect agent bridge roles and physical uplinks
+      ansible.builtin.shell: |
+        set +e
+        echo '=== BW AGENT SERVICE ==='
+        systemctl is-active bwagent.service 2>/dev/null || true
+        echo '=== AGENT ENV ==='
+        grep -E '^BW_AGENT_(COLLECT_PHYSICAL_NET|BRIDGE_ROLES)=' /etc/bwagent.env 2>/dev/null || true
+        echo '=== LINUX BRIDGES AND MEMBERS ==='
+        for brif in /sys/class/net/*/brif; do
+          [ -d "$brif" ] || continue
+          br="$(basename "$(dirname "$brif")")"
+          printf '%s: ' "$br"
+          ls -1 "$brif" 2>/dev/null | tr '\n' ' '
+          echo
+        done
+        echo '=== RECENT PHYSICAL COLLECTION ERRORS ==='
+        journalctl -u bwagent.service --since '30 minutes ago' --no-pager 2>/dev/null \
+          | grep -Ei 'bridge does not exist|bridge has no members|no physical/uplink|physical iface' \
+          | tail -n 20 || true
+      args:
+        executable: /bin/bash
+      register: physical_src_check
+      changed_when: false
+
+    - name: Show physical source check
+      ansible.builtin.debug:
+        var: physical_src_check.stdout_lines

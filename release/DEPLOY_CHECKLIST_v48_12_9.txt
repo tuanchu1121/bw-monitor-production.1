@@ -1,0 +1,122 @@
+BW Monitor v48.12.9-r4 Deployment Checklist
+============================================
+
+1. Confirm current service
+--------------------------
+
+systemctl status bw-monitor --no-pager -l
+systemctl status bw-monitor-retention.timer --no-pager -l
+
+2. Check database and free space
+--------------------------------
+
+ls -lh /opt/bw-monitor/bandwidth.db*
+df -h /opt/bw-monitor
+
+BW_BACKUP_DB=1 needs enough free space for a consistent database backup.
+
+3. Extract release
+------------------
+
+cd /root
+rm -rf /root/bw-monitor-v48.12.9-r4-full
+unzip -o bw-monitor-v48.12.9-r4-full.zip
+cd /root/bw-monitor-v48.12.9-r4-full
+chmod +x install_bw_monitor_v48_12_9.sh
+
+4. Run preflight
+----------------
+
+BW_PREFLIGHT_ONLY=1 ./install_bw_monitor_v48_12_9.sh
+
+Expected final line:
+
+BW Monitor v48.12.9 pre-flight checks passed. No files were installed.
+
+5. Install
+----------
+
+BW_RECOVER_STUCK_MAINTENANCE=1 \
+BW_BACKUP_DB=1 \
+./install_bw_monitor_v48_12_9.sh
+
+6. Verify service
+-----------------
+
+systemctl status bw-monitor --no-pager -l
+journalctl -u bw-monitor -n 200 --no-pager
+curl -I http://127.0.0.1:8080/login
+
+Expected:
+
+- Active: active (running)
+- HTTP 200 or 302
+
+7. Verify retention
+-------------------
+
+systemctl status bw-monitor-retention.timer --no-pager -l
+systemctl list-timers --all | grep bw-monitor-retention
+
+8. Verify installed source
+--------------------------
+
+grep -n 'V48129_VERSION = "48.12.9"' /opt/bw-monitor/app.py
+grep -n 'def vm_abuse_page_v48129' /opt/bw-monitor/app.py
+grep -n 'def clear_abuse_events_v48129' /opt/bw-monitor/app.py
+grep -nF 'DELETE FROM vm_abuse_incidents' /opt/bw-monitor/app.py
+
+The incident DELETE grep must show multiple lines.
+
+9. Browser checks
+-----------------
+
+Dashboard → Abuse → Current Abuse
+
+Verify:
+- NETWORK AVG has RX Mbps / TX Mbps sort
+- PPS PEAK / WINDOW has RX PPS / TX PPS sort
+- CPU has Full % / Core % and meter
+- RAM has Guest %, Used GiB, Host RSS, Assigned and meter
+- DISK has Read, Write, Read IOPS, Write IOPS sort
+- REASON / SEVERITY has colored chips and Abusing duration
+- Copy UUID works
+
+Dashboard → Abuse → Abuse Events
+
+Verify:
+- One row per VM
+- Abuse Count sort
+- Total Minutes sort
+- Longest Minutes sort
+- Max Ratio sort
+- Last Abuse sort
+- Copy UUID
+- View occurrences expands Start / End / Minutes
+
+Admin → Abuse
+
+Verify:
+- Abuse data map is visible
+- Clear one VM data has three independent choices
+- Reset all Abuse data exists
+- Abuse History Cleanup remains available
+
+10. Cleanup behavior check
+--------------------------
+
+Before clearing, inspect counts:
+
+sqlite3 -header -column /opt/bw-monitor/bandwidth.db "
+SELECT 'Current Abuse',COUNT(*) FROM vm_abuse_state WHERE is_abuse=1
+UNION ALL SELECT 'Raw Abuse History',COUNT(*) FROM vm_abuse_events
+UNION ALL SELECT 'Abuse Events by VM',COUNT(*) FROM vm_abuse_incidents;
+"
+
+Clear All Abuse Logs should make the two history counts zero while Current
+Abuse remains truthful.
+
+11. Agent
+---------
+
+No Agent redeployment is required.

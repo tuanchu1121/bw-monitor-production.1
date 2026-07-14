@@ -1,0 +1,24 @@
+[Unit]
+Description=BW Monitor automatic 2-day raw / 7-day bounded retention
+After=local-fs.target bw-monitor.service
+ConditionPathExists=/opt/bw-monitor/app.py
+ConditionPathExists=/opt/bw-monitor/bw_monitor_retention.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/bw-monitor
+EnvironmentFile=-/etc/default/bw-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=BW_MONITOR_APP_FILE=/opt/bw-monitor/app.py
+ExecStart=/bin/bash -lc 'for py in /opt/bw-monitor/venv/bin/python3 /opt/bw-monitor/.venv/bin/python3 /usr/bin/python3; do if [ -x "$py" ]; then exec "$py" /opt/bw-monitor/bw_monitor_retention.py; fi; done; echo "No Python interpreter found" >&2; exit 127'
+TimeoutStartSec=12h
+TimeoutStopSec=60
+KillSignal=SIGTERM
+SendSIGKILL=yes
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=journal
+StandardError=journal

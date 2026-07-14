@@ -1,0 +1,240 @@
+BW Monitor v48.12.9-r4 Release Notes
+====================================
+
+R2 hotfix
+---------
+
+- Fixed a Python SyntaxError in `_v48129_rule_chip`.
+- The R1 source used a nested f-string expression containing escaped quotes, which Python rejects with: `f-string expression part cannot include a backslash`.
+- The title attribute is now built in a separate variable before rendering the HTML chip.
+- No database schema, Agent payload, API contract, retention policy, Abuse state, or configuration behavior changed.
+- Full pre-flight and all regression suites pass after the fix.
+
+
+Release goal
+------------
+Make Current Abuse as operationally useful as Top VM while making Abuse
+history and cleanup behavior explicit, predictable and production-safe.
+
+New: operations-first Current Abuse table
+-----------------------------------------
+
+The table now contains:
+
+- NODE / VM
+- REASON / SEVERITY
+- NETWORK AVG
+- PPS PEAK / WINDOW
+- CPU
+- RAM
+- DISK
+- LAST SEEN
+
+Independent sort controls:
+
+NETWORK AVG
+- RX Mbps
+- TX Mbps
+
+PPS PEAK / WINDOW
+- RX PPS
+- TX PPS
+
+CPU
+- Full %
+- Core %
+
+RAM
+- Guest %
+- Used GiB
+- Host RSS
+- Assigned
+
+DISK
+- Read
+- Write
+- Read IOPS
+- Write IOPS
+
+Resource visualization
+----------------------
+
+CPU:
+- Shows Full %
+- Shows Core %
+- Shows assigned vCPU count
+- Full % drives a meter normalized against assigned vCPU capacity
+
+RAM:
+- Shows Guest %
+- Shows Guest Used GiB
+- Shows Host RSS
+- Shows Assigned RAM
+- Guest Used or Host RSS is normalized against Assigned RAM for the meter
+- The currently selected RAM sort mode is highlighted
+
+Meter levels:
+- Normal: below 70%
+- Warm: 70% to below 85%
+- Hot: 85% to below 95%
+- Critical: 95% and above
+
+Reason / Severity redesign
+--------------------------
+
+MAX ratio stays inside the REASON / SEVERITY cell instead of occupying a
+separate column.
+
+The cell now shows:
+
+- Ratio
+- Primary Abuse type
+- Exact metric and threshold that produced the maximum ratio
+- Color-coded rule chips
+- Exact configured sustained duration
+- Active duration chip: Abusing 35m / 2h 40m / 1d 05h
+
+Colors:
+- Network: blue
+- CPU: red
+- RAM: purple
+- Disk: orange
+- Active/duration: amber
+
+MAX ratio remains transparent:
+
+- CPU = CPU Full / configured CPU threshold
+- Network = current directional metric / configured threshold
+- Disk = largest enabled Read, Write, Total or IOPS ratio
+- RAM High = current % / threshold
+- RAM Low Usable = bounded inverse scale from 1.00x at threshold to 2.00x at 0%
+
+It is not a weighted score and values are not added together.
+
+PPS Peak / Window
+-----------------
+
+Each direction shows:
+
+- Peak PPS
+- Seconds above threshold in the 300-second Agent window
+- Required high seconds from policy
+
+Example:
+
+RX PEAK 220k PPS
+270/300s high · need 270s
+
+Abuse Events by VM
+------------------
+
+Preserved one-row-per-VM grouping with improved visual consistency:
+
+- Sort by Abuse Count
+- Sort by Total Minutes
+- Sort by Longest Minutes
+- Sort by Max Ratio
+- Sort by Last Abuse
+- Sort by Node / VM
+- Copy UUID
+- Color-coded reasons
+
+Expanded occurrences show:
+
+- Started
+- Ended / Active now
+- Exact minutes
+- Human duration
+- Max ratio
+- Color-coded reason chips
+- Duration chip
+- Raw event count
+
+Admin Abuse data controls
+-------------------------
+
+Added an explicit data map:
+
+Current Abuse
+- vm_abuse_state
+
+Raw History
+- vm_abuse_events
+
+Abuse Events by VM
+- vm_abuse_incidents
+
+Clear All Abuse Logs now guarantees:
+
+DELETE FROM vm_abuse_events
+DELETE FROM vm_abuse_incidents
+
+Current Abuse remains unchanged by history cleanup.
+
+Clear matching and Clear selected:
+
+- Delete the requested raw event rows
+- Rebuild grouped incidents from the remaining raw history
+
+New Reset All Abuse Data action:
+
+- Requires exact text RESET ALL ABUSE DATA
+- Deletes current state, raw events and grouped incidents
+- Does not delete Node/VM inventory, metrics, Agent state, users or API keys
+
+New per-VM data controls:
+
+- Delete Raw History
+- Delete Abuse Events by VM
+- Reset Current Abuse + streak
+- Requires exact text CLEAR VM ABUSE DATA
+
+Installer hardening
+-------------------
+
+The installer now verifies:
+
+- V48129_VERSION marker
+- Final Current Abuse endpoint is vm_abuse_page_v48129
+- Final cleanup endpoint is clear_abuse_events_v48129
+- Complete vm_abuse_incidents cleanup paths exist
+- Operations table markers exist
+- PPS Peak / Window exists
+- Color-coded rule chips exist
+- Reset-all and per-VM Abuse management endpoints are registered
+
+Preserved
+---------
+
+- Agent v10 payload and deployment
+- BW_MONITOR_TOKEN
+- Existing database
+- Node/VM inventory
+- Current metrics
+- Existing Current Abuse and Abuse History during normal upgrade
+- cycles-v3-ram engine
+- RAM Abuse policy
+- API Management
+- Allowed IP/CIDR editing
+- API request logs
+- Effective parent Node visibility
+- VM Management selection helpers
+- Expandable charts
+- Dark mode fixes
+- Login Show/Hide password
+- Single-worker Maintenance guard
+- 48-hour raw / day 3-7 hourly snapshot retention
+- No automatic VACUUM
+
+v48.12.9-r3 UI refinement
+-------------------------
+- Current Abuse CPU cell now uses the compact Top VM layout: large Core %, Full % plus exact sustained minutes, a Full%-normalized bar, and assigned vCPU footer.
+- Current Abuse RAM cell now uses the compact Top VM layout: Guest Used / Assigned, Guest Used %, a stable Guest%-normalized bar, and Host RSS footer.
+- CPU Full/Core and RAM Guest/Used/RSS/Assigned header sort options remain independent without changing the row layout.
+- No database, Agent, API, Abuse-engine, cleanup, or retention behavior changed.
+
+v48.12.9-r4 UI POLISH
+- Keep Current Abuse compact like the approved screenshot.
+- Move active Abuse duration from REASON / SEVERITY to the active Network, PPS, CPU, RAM or Disk metric block.
+- Add a CPU Full progress bar to the VM UUID detail overview; retain CPU Core % and vCPU as context.
+- Add dedicated light/dark colors for metric-local Abuse duration badges.

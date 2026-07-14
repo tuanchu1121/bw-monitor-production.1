@@ -1,0 +1,25 @@
+BW Monitor v48.12.9-r4
+
+UI-only operational polish on top of v48.12.9-r3:
+
+1. Current Abuse remains compact.
+   - REASON / SEVERITY now contains only severity and color-coded rule chips.
+   - The active duration is no longer repeated inside the reason cell.
+
+2. Active duration is placed under the metric group that is currently abusing.
+   - Network AVG flags -> duration under NETWORK AVG.
+   - Network PPS flags -> duration under PPS PEAK / WINDOW.
+   - CPU_SUSTAINED -> duration under CPU.
+   - RAM_SUSTAINED -> duration under RAM.
+   - DISK_SUSTAINED -> duration under DISK.
+   - Multi-type offenders can show the same active incident duration under each active group.
+
+3. VM UUID detail page CPU overview is now visual.
+   - CPU Full % is the main value.
+   - Progress bar uses CPU Full %.
+   - CPU Core % and vCPU count remain visible below.
+   - Removed the confusing "CPU / vCPU" and "100% = 1 full core" overview tile.
+
+4. Light and dark themes have dedicated colors for Network, CPU, RAM and Disk duration badges.
+
+No database migration, agent deployment, token rotation or API change is required.

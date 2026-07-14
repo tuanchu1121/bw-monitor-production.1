@@ -1,0 +1,61 @@
+BW Monitor Domain + HTTPS Notes
+===============================
+
+A web IP whitelist is NOT required for normal use.
+Use strong accounts, HTTPS and normal login protection.
+If Admin must be private to fixed office/VPN IPs, restrict /admin/ in Nginx.
+Do not add a global web whitelist when operators use dynamic IPs because it can lock them out.
+
+Recommended topology
+--------------------
+Internet -> Nginx :443 -> Gunicorn 127.0.0.1:8080
+
+Important
+---------
+Do not expose port 8080 publicly when BW_WEB_TRUST_PROXY=1.
+ProxyFix trusts one proxy hop, so Nginx/HAProxy must be the only path to the app.
+
+/etc/default/bw-monitor
+-----------------------
+BW_WEB_TRUST_PROXY=1
+BW_ADMIN_COOKIE_SECURE=1
+
+The API Allowed IP list will then see the real client IP through the trusted proxy.
+Existing API keys continue to work. No Agent change is needed.
+
+Nginx location example
+----------------------
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+
+    proxy_connect_timeout 10s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+}
+
+After editing /etc/default/bw-monitor
+-------------------------------------
+systemctl restart bw-monitor
+systemctl status bw-monitor --no-pager -l
+
+Optional Admin-only Nginx allowlist
+-----------------------------------
+Use only when operator source IPs are stable:
+
+location ^~ /admin/ {
+    allow 103.199.16.36;
+    deny all;
+
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
