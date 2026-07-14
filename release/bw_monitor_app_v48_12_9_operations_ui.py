@@ -9413,6 +9413,12 @@ def purge_vm_data(conn, node, vm_uuid, refresh_snapshots=True):
         """,
         (vm_uuid, node, node),
     )
+    ensure_disk_detail_schema(conn)
+    deleted["vm_disk_current"] = _delete_count(conn, "DELETE FROM vm_disk_current WHERE node=? AND vm_uuid=?", (node, vm_uuid))
+    deleted["vm_disk_stats"] = _delete_count(conn, "DELETE FROM vm_disk_stats WHERE node=? AND vm_uuid=?", (node, vm_uuid))
+    deleted["vm_abuse_state"] = _delete_count(conn, "DELETE FROM vm_abuse_state WHERE node=? AND vm_uuid=?", (node, vm_uuid))
+    deleted["vm_abuse_events"] = _delete_count(conn, "DELETE FROM vm_abuse_events WHERE node=? AND vm_uuid=?", (node, vm_uuid))
+    deleted["vm_abuse_incidents"] = _delete_count(conn, "DELETE FROM vm_abuse_incidents WHERE node=? AND vm_uuid=?", (node, vm_uuid))
 
     _repair_vm_location_after_purge(conn, vm_uuid, node)
     if refresh_snapshots:
@@ -9467,6 +9473,12 @@ def purge_all_vms_for_node(conn, node):
         "DELETE FROM vm_migration_events WHERE old_node=? OR new_node=?",
         (node, node),
     )
+    ensure_disk_detail_schema(conn)
+    deleted["vm_disk_current"] = _delete_count(conn, "DELETE FROM vm_disk_current WHERE node=?", (node,))
+    deleted["vm_disk_stats"] = _delete_count(conn, "DELETE FROM vm_disk_stats WHERE node=?", (node,))
+    deleted["vm_abuse_state"] = _delete_count(conn, "DELETE FROM vm_abuse_state WHERE node=?", (node,))
+    deleted["vm_abuse_events"] = _delete_count(conn, "DELETE FROM vm_abuse_events WHERE node=?", (node,))
+    deleted["vm_abuse_incidents"] = _delete_count(conn, "DELETE FROM vm_abuse_incidents WHERE node=?", (node,))
 
     for vm_uuid in vm_uuids:
         _repair_vm_location_after_purge(conn, vm_uuid, node)
@@ -9495,6 +9507,7 @@ def purge_node_data(conn, node):
         "node_filesystem_latest",
         "node_physical_net_stats",
         "node_physical_net_latest",
+        "node_storage_current",
         "node_bridge_addresses_latest",
         "agent_health_stats",
         "agent_health_latest",
@@ -23887,4 +23900,118 @@ def page(title, content):
         response.set_data(html)
     except Exception:
         app.logger.exception('Could not add Storage I/O navigation')
+    return response
+
+# ---------------------------------------------------------------------------
+# v48.13.1 disk operations UX
+# ---------------------------------------------------------------------------
+V48131_DISK_SORT_KEYS = {"diskassigned","diskallocated","diskallocpct","readiops","writeiops","diskcount"}
+_get_top_vm_rows_v48131_base = get_top_vm_rows
+_vm_page_v48131_base = app.view_functions.get("vm_page")
+_vm_abuse_page_v48131_base = app.view_functions.get("vm_abuse_page")
+
+def clean_top_sort(sort_by):
+    allowed={"total","rx","tx","public","private","mbps","peakmbps","pps","peakpps","sample","drops","errors","cpu","cpufull","vcpu","ram","ramguest","ramused","ramrss","ramassigned","diskr","diskw","diskassigned","diskallocated","diskallocpct","readiops","writeiops","diskcount","last_push","node","vm"}
+    return sort_by if sort_by in allowed else "total"
+
+def _v48131_disk_map(keys):
+    result={}
+    conn=db()
+    try:
+        ensure_disk_detail_schema(conn)
+        for node,uuid in keys:
+            rows=conn.execute("""SELECT target,source,mount,storage_device,storage_block,capacity_bytes,allocation_bytes,physical_bytes,read_bps,write_bps,read_iops,write_iops,last_seen FROM vm_disk_current WHERE node=? AND vm_uuid=? AND role='customer' ORDER BY write_iops DESC,write_bps DESC,target""",(node,uuid)).fetchall()
+            cap=sum(max(0,safe_int(r[5],0)) for r in rows); alloc=sum(max(0,safe_int(r[6],0)) for r in rows); phys=sum(max(0,safe_int(r[7],0)) for r in rows)
+            ri=sum(max(0.0,safe_float(r[10],0)) for r in rows); wi=sum(max(0.0,safe_float(r[11],0)) for r in rows)
+            mounts=[]
+            for r in rows:
+                label=str(r[2] or r[3] or r[4] or '-').strip()
+                if label and label not in mounts: mounts.append(label)
+            result[(str(node),str(uuid))]=(len(rows),cap,alloc,phys,ri,wi," + ".join(mounts[:3]))
+    finally: conn.close()
+    return result
+
+def get_top_vm_rows(period,q="",sort_by="total",order="desc",scope="all",limit=100):
+    requested=clean_top_sort(sort_by); order=clean_sort_order(order); requested_limit=max(10,min(1000,safe_int(limit,100)))
+    disk_sort=requested in V48131_DISK_SORT_KEYS
+    rows,selected,latest,_=_get_top_vm_rows_v48131_base(period,q=q,sort_by=("total" if disk_sort else requested),order=order,scope=scope,limit=(1000 if disk_sort else requested_limit))
+    dm=_v48131_disk_map([(r[0],r[1]) for r in rows])
+    out=[tuple(r)+tuple(dm.get((str(r[0]),str(r[1])),(0,0,0,0,0.0,0.0,""))) for r in rows]
+    if disk_sort:
+        idx={"diskcount":35,"diskassigned":36,"diskallocated":37,"readiops":39,"writeiops":40}
+        def value(r):
+            if requested=="diskallocpct": return safe_float(r[37],0)*100.0/max(1.0,safe_float(r[36],0))
+            return safe_float(r[idx[requested]],0)
+        out.sort(key=lambda r:(value(r),safe_float(r[7],0)),reverse=(order=="desc"))
+    return out[:requested_limit],selected,latest,requested_limit
+
+def _v48131_disk_capacity_block(assigned,allocated,count,storage):
+    pct=safe_float(allocated,0)*100.0/max(1.0,safe_float(assigned,0)) if assigned else 0.0
+    level=_v48129_level(pct); foot=f"{int(count)} disk"+("s" if int(count)!=1 else "")
+    if storage: foot+=f" · {escape(storage)}"
+    return f'<div class="resource-block disk-cap-resource resource-{level}"><b class="resource-primary">{_disk_fmt_bytes(allocated)} / {_disk_fmt_bytes(assigned)}</b><div class="resource-context"><b>{pct:.1f}% allocated</b></div><span class="resource-meter"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></span><small class="resource-foot">{foot}</small></div>'
+
+def top_vm_table(rows,period,q,sort_by,order,scope,limit):
+    body=""
+    for rank,row in enumerate(rows,1):
+        (node,vm_uuid,iface_count,public_total,private_total,rx,tx,total,packets,drops,errors,avg_mbps,peak_mbps,avg_pps,peak_pps,sample_count,sample_expected,sample_max_gap,seconds_over_pps,seconds_over_mbps,sample_quality_rank,cpu_full_percent,vcpu_current,cpu_core_percent,ram_rss_kib,ram_current_kib,disk_read_bps,disk_write_bps,last_push,interval_seconds,public_ipv4,private_ipv4,ram_available_kib,ram_unused_kib,ram_usable_kib)=row[:35]
+        disk_count,disk_assigned,disk_alloc,disk_phys,read_iops,write_iops,storage=row[35:42]
+        href=url_for("vm_page",node=node,vm_uuid=vm_uuid,period=period)
+        sample=network_sample_badge(network_quality_from_rank(sample_quality_rank),sample_count,sample_expected,sample_max_gap)
+        ram_html=fmt_vm_ram_block(ram_current_kib,ram_rss_kib,ram_available_kib,ram_unused_kib,ram_usable_kib,compact=True)
+        body+=f'<tr><td class="num">{rank}</td><td class="mono"><b>{escape(node)}</b></td><td class="mono"><span class="uuid-cell"><a href="{escape(href,quote=True)}">{escape(vm_uuid)}</a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}">⧉</button></span></td><td class="num">{iface_count or 0}</td><td class="num">{human(public_total)}</td><td class="num">{human(private_total)}</td><td class="num"><b>{human(total)}</b></td><td class="num">{float(avg_mbps or 0):.2f}</td><td class="num"><b>{float(peak_mbps or 0):.2f}</b></td><td class="num">{fmt_pps_value(avg_pps)}</td><td class="num"><b>{fmt_pps_value(peak_pps)}</b></td><td class="num">{sample}</td><td class="num"><b>{float(cpu_core_percent or 0):.1f}%</b><small>{float(cpu_full_percent or 0):.1f}% FULL</small></td><td class="num">{int(vcpu_current or 0)}</td><td class="num ram-cell">{ram_html}</td><td class="num disk-cap-cell">{_v48131_disk_capacity_block(disk_assigned,disk_alloc,disk_count,storage)}</td><td class="num">{human_rate(disk_read_bps)}</td><td class="num">{human_rate(disk_write_bps)}</td><td class="num">{float(read_iops or 0):,.1f}</td><td class="num"><b>{float(write_iops or 0):,.1f}</b></td><td class="num">{fmt_push(last_push)}</td><td class="num">{int(drops or 0)}</td><td class="num">{int(errors or 0)}</td></tr>'
+    if not body: body='<tr><td colspan="23" class="empty">No VM data at this selected snapshot</td></tr>'
+    h=lambda label,key: top_sort_header(label,key,period,q,sort_by,order,scope,limit)
+    caplinks=' · '.join([h('ALLOC','diskallocated'),h('ASSIGNED','diskassigned'),h('ALLOC %','diskallocpct'),h('COUNT','diskcount')])
+    return f'<div class="card vm-table-card top-vm-v48131"><div class="table-title-row"><h3>Top VM Across All Nodes</h3><div class="count-badges"><span>Rows <b>{len(rows)}</b></span><span>Sort <b>{escape(sort_by)} {escape(order)}</b></span></div></div><div class="table-wrap"><table class="table-top-vm table-top-vm-disk"><thead><tr><th>#</th><th>{h("NODE","node")}</th><th>{h("VM UUID","vm")}</th><th>IFACES</th><th>{h("PUBLIC","public")}</th><th>{h("PRIVATE","private")}</th><th>{h("TOTAL","total")}</th><th>{h("AVG Mbps","mbps")}</th><th>{h("PEAK Mbps","peakmbps")}</th><th>{h("AVG PPS","pps")}</th><th>{h("PEAK PPS","peakpps")}</th><th>SAMPLE</th><th>{h("CPU","cpu")}</th><th>{h("vCPU","vcpu")}</th><th>{h("RAM","ram")}</th><th><div>DISK CAPACITY</div><small>{caplinks}</small></th><th>{h("DISK R/s","diskr")}</th><th>{h("DISK W/s","diskw")}</th><th>{h("R IOPS","readiops")}</th><th>{h("W IOPS","writeiops")}</th><th>{h("PUSH","last_push")}</th><th>{h("DROPS","drops")}</th><th>{h("ERR","errors")}</th></tr></thead><tbody>{body}</tbody></table></div><div class="table-hint">Disk Capacity = <b>Host Allocated / Assigned</b> for customer disks. Click UUID to see every disk and storage backend.</div></div>'
+
+def _v48131_vm_disk_card(node,uuid):
+    conn=db()
+    try:
+        ensure_disk_detail_schema(conn)
+        rows=conn.execute("""SELECT target,source,role,mount,storage_device,storage_block,storage_fstype,capacity_bytes,allocation_bytes,physical_bytes,read_bps,write_bps,read_iops,write_iops,last_seen FROM vm_disk_current WHERE node=? AND vm_uuid=? ORDER BY CASE role WHEN 'customer' THEN 0 ELSE 1 END,target""",(node,uuid)).fetchall()
+    finally: conn.close()
+    customer=[r for r in rows if str(r[2])=='customer']; ac=sum(safe_int(r[7],0) for r in customer); al=sum(safe_int(r[8],0) for r in customer)
+    cards=[]
+    for r in rows:
+        target,source,role,mount,dev,block,fs,cap,alloc,phys,rb,wb,ri,wi,seen=r; cls='disk-aux' if role!='customer' else 'disk-customer'; pct=safe_float(alloc,0)*100/max(1,safe_float(cap,0))
+        cards.append(f'<div class="vm-disk-item {cls}"><div class="vm-disk-head"><div><b>{escape(target)}</b><span>{escape(role)}</span></div><strong>{escape(mount or "-")} · {escape(dev or block or "-")}</strong></div><div class="vm-disk-grid"><div><small>ALLOCATED / ASSIGNED</small><b>{_disk_fmt_bytes(alloc)} / {_disk_fmt_bytes(cap)}</b><span>{pct:.1f}%</span></div><div><small>READ / WRITE</small><b>{_disk_fmt_rate(rb)} / {_disk_fmt_rate(wb)}</b></div><div><small>R / W IOPS</small><b>{float(ri or 0):,.1f} / {float(wi or 0):,.1f}</b></div><div><small>PHYSICAL</small><b>{_disk_fmt_bytes(phys)}</b></div></div><div class="vm-disk-source"><small>SOURCE</small><code>{escape(source or "-")}</code><small>BLOCK {escape(block or "-")} · FS {escape(fs or "-")} · {fmt_push(seen)}</small></div></div>')
+    return f'<div class="card vm-disk-detail-v48131"><div class="table-title-row"><div><h3>Virtual Disks</h3><div class="table-hint">Full per-disk allocation, storage mapping, throughput and IOPS.</div></div><div class="count-badges"><span>Customer disks <b>{len(customer)}</b></span><span>Allocated <b>{_disk_fmt_bytes(al)}</b></span><span>Assigned <b>{_disk_fmt_bytes(ac)}</b></span></div></div><div class="vm-disk-list">{"".join(cards) or "<div class=empty>No per-disk data received yet</div>"}</div></div>'
+
+def vm_page_v48131():
+    response=_vm_page_v48131_base()
+    if not isinstance(response,Response) or response.status_code>=400:return response
+    node=(request.args.get('node') or '').strip();uuid=(request.args.get('vm_uuid') or '').strip()
+    if node and uuid:
+        html=response.get_data(as_text=True).replace('<div class="vm-charts-grid">',_v48131_vm_disk_card(node,uuid)+'<div class="vm-charts-grid">',1);response.set_data(html)
+    return response
+app.view_functions['vm_page']=vm_page_v48131
+
+def _v48131_disk_abuse_card():
+    conn=db()
+    try:
+        ensure_disk_detail_schema(conn)
+        rows=conn.execute("""SELECT a.node,a.vm_uuid,a.abuse_flags,d.target,d.mount,d.storage_device,d.read_bps,d.write_bps,d.read_iops,d.write_iops,d.allocation_bytes,d.capacity_bytes FROM vm_abuse_state a JOIN vm_disk_current d ON d.node=a.node AND d.vm_uuid=a.vm_uuid AND d.role='customer' WHERE a.is_abuse=1 AND a.abuse_flags LIKE '%DISK%' ORDER BY MAX(d.read_iops,d.write_iops) DESC,MAX(d.read_bps,d.write_bps) DESC LIMIT 100""").fetchall()
+    finally:conn.close()
+    if not rows:return ''
+    body=''.join(f'<tr><td class="mono"><a href="{escape(url_for("vm_page",node=r[0],vm_uuid=r[1],period="1h"),quote=True)}">{escape(r[1])}</a><small>{escape(r[0])}</small></td><td>{escape(r[2])}</td><td><b>{escape(r[3])}</b><small>{escape(r[4] or "-")} · {escape(r[5] or "-")}</small></td><td>{_disk_fmt_bytes(r[10])} / {_disk_fmt_bytes(r[11])}</td><td>{_disk_fmt_rate(r[6])}</td><td>{_disk_fmt_rate(r[7])}</td><td>{float(r[8] or 0):,.1f}</td><td><b>{float(r[9] or 0):,.1f}</b></td></tr>' for r in rows)
+    return f'<div class="card disk-abuse-context-v48131"><div class="table-title-row"><div><h3>Disk Abuse by VM Disk</h3><div class="table-hint">Current disk abuse linked by Node + VM UUID to its hottest customer disk.</div></div></div><div class="table-wrap"><table><thead><tr><th>VM</th><th>RULE</th><th>DISK / STORAGE</th><th>ALLOC / ASSIGNED</th><th>READ</th><th>WRITE</th><th>R IOPS</th><th>W IOPS</th></tr></thead><tbody>{body}</tbody></table></div></div>'
+
+def vm_abuse_page_v48131():
+    response=_vm_abuse_page_v48131_base()
+    if not isinstance(response,Response) or response.status_code>=400:return response
+    if (request.args.get('tab') or 'current').lower() in {'current',''}:
+        card=_v48131_disk_abuse_card()
+        if card:
+            html=response.get_data(as_text=True).replace('<details class="card policy-fold">',card+'<details class="card policy-fold">',1);response.set_data(html)
+    return response
+app.view_functions['vm_abuse_page']=vm_abuse_page_v48131
+
+V48131_CSS='''<style id="v48131-disk-ops">.table-top-vm-disk{min-width:3000px!important}.table-top-vm-disk th,.table-top-vm-disk td{text-align:right}.table-top-vm-disk th:nth-child(2),.table-top-vm-disk th:nth-child(3),.table-top-vm-disk td:nth-child(2),.table-top-vm-disk td:nth-child(3){text-align:left}.disk-cap-resource .resource-primary{font-size:13px}.disk-cap-resource .resource-foot{text-align:center;max-width:220px;overflow:hidden;text-overflow:ellipsis}.vm-disk-list{display:grid;gap:12px}.vm-disk-item{border:1px solid var(--line,#d0d5dd);border-radius:12px;padding:14px}.vm-disk-item.disk-aux{opacity:.72}.vm-disk-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.vm-disk-head>div{display:flex;gap:8px;align-items:center}.vm-disk-head span{font-size:10px;font-weight:900;text-transform:uppercase;padding:3px 7px;border-radius:999px;background:#eef4ff}.vm-disk-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}.vm-disk-grid>div{padding:10px;border-radius:9px;background:#f8fafc}.vm-disk-grid small,.vm-disk-source small{display:block;font-size:9px;font-weight:900;color:#667085}.vm-disk-grid b{display:block;margin-top:5px}.vm-disk-source{margin-top:10px}.vm-disk-source code{display:block;overflow-wrap:anywhere;margin:5px 0}.disk-abuse-context-v48131 table{min-width:1500px}.disk-abuse-context-v48131 td small{display:block;color:#667085;margin-top:4px}html[data-theme=dark] .vm-disk-item{border-color:#334155}html[data-theme=dark] .vm-disk-grid>div{background:#0b1727}html[data-theme=dark] .vm-disk-head span{background:#172554;color:#bfdbfe}@media(max-width:900px){.vm-disk-grid{grid-template-columns:1fr 1fr}}</style>'''
+_page_v48131_base=page
+def page(title,content):
+    response=_page_v48131_base(title,content)
+    try:
+        html=response.get_data(as_text=True).replace('</head>',V48131_CSS+'</head>',1);response.set_data(html)
+    except Exception:app.logger.exception('Could not apply v48.13.1 disk UX')
     return response

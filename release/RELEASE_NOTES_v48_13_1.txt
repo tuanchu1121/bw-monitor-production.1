@@ -1,0 +1,13 @@
+BW Monitor v48.13.1
+
+Disk operations UX
+- Top VM remains one row per VM.
+- Adds sortable Disk Capacity (Host Allocated / Assigned), disk count, Read IOPS and Write IOPS.
+- Clicking the VM UUID opens the existing VM detail page.
+- VM detail adds a complete Virtual Disks section for every customer/auxiliary disk: target, source, role, mount, backend device/block, filesystem, Assigned, Host Allocated, Physical, Read/Write and Read/Write IOPS.
+- Current VM Abuse adds a Disk Abuse by VM Disk context table linked by node + VM UUID.
+
+Cleanup integrity
+- Purging one VM now removes vm_disk_current, vm_disk_stats, vm_abuse_state, vm_abuse_events and vm_abuse_incidents for the same node + UUID.
+- Purging all VMs on a node removes the same VM-scoped disk and abuse datasets.
+- Node storage rows remain when only a VM is purged.
