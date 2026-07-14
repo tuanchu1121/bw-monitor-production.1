@@ -25654,3 +25654,248 @@ def _v48135_storage_node_table(conn, values, start_ts):
 
 
 _v48133_storage_node_table = _v48135_storage_node_table
+
+# ---------------------------------------------------------------------------
+# v48.13.6 grouped Storage I/O, working Top VM disk sort and /home visibility
+# ---------------------------------------------------------------------------
+
+V48136_VERSION = "48.13.6"
+V48136_BUILD = "r1"
+
+
+# The previous Top VM renderer already generated the three links, but the
+# request sanitizer discarded their keys and silently fell back to TOTAL.
+_clean_top_sort_v48136_base = clean_top_sort
+
+
+def clean_top_sort(sort_by):
+    value = str(sort_by or "").strip().lower()
+    if value in V48133_DISK_SORT_KEYS:
+        return value
+    return _clean_top_sort_v48136_base(value)
+
+
+V48136_STORAGE_CSS = r'''
+<style id="v48136-storage-grouped-ui">
+.storage-view-mode{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:8px}.storage-view-mode span{font-size:10px;color:#667085}.storage-view-mode b{font-size:10px;color:#344054}
+.storage-group-table{width:100%;min-width:1650px;table-layout:fixed}.storage-group-table th:nth-child(1){width:205px}.storage-group-table th:nth-child(2){width:295px}.storage-group-table th:nth-child(3){width:640px}.storage-group-table th:nth-child(4){width:240px}.storage-group-table th:nth-child(n+5){width:105px}.storage-group-table td{vertical-align:middle}.storage-group-table td.num{text-align:right;white-space:nowrap}
+.storage-vm-group-row>td,.storage-node-group-row>td{padding-top:15px!important;padding-bottom:15px!important}.storage-vm-group-row+tr td,.storage-node-group-row+tr td{border-top:2px solid #dbe3ef!important}
+.storage-group-id>a{display:block}.storage-group-id .storage-node-ip{display:flex;align-items:center;gap:4px}.storage-group-uuid .uuid-cell{display:flex;align-items:center;gap:7px}.storage-group-uuid .uuid-cell>a{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-group-uuid small{display:block;margin-top:7px;color:#667085}
+.storage-child-stack{display:grid;gap:9px}.storage-child-item{display:grid;grid-template-columns:minmax(190px,1.25fr) minmax(190px,1fr) minmax(250px,1.35fr);gap:12px;align-items:center;border:1px solid #dbe3ef;border-radius:12px;padding:10px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.035)}
+.storage-child-main{min-width:0}.storage-child-title{display:flex;align-items:center;gap:8px}.storage-child-title b{font-size:14px}.storage-child-title span{font-size:10px;font-weight:900;color:#475467;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-child-main code{display:block;margin-top:6px;font-size:9px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-child-main small{display:block;margin-top:5px;font-size:9px;color:#98a2b3}.storage-child-cap .disk-capacity{min-width:0}.storage-child-metrics{display:grid;grid-template-columns:repeat(4,minmax(54px,1fr));gap:7px}.storage-child-metric{min-width:0;border-left:1px solid #eaecf0;padding-left:8px}.storage-child-metric span{display:block;font-size:8px;font-weight:900;color:#667085}.storage-child-metric b{display:block;margin-top:3px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-child-footer{grid-column:1/-1;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:7px;border-top:1px dashed #eaecf0;font-size:9px;color:#667085}.storage-child-footer a{font-weight:900}.storage-filtered-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;padding:9px 12px;border:1px solid #b2ddff;background:#eff8ff;border-radius:10px;font-size:10px;color:#175cd3}.storage-filtered-banner b{font-size:11px}.storage-filtered-banner a{font-weight:900}
+.storage-node-child-item{grid-template-columns:minmax(220px,1.15fr) minmax(210px,1fr) minmax(290px,1.45fr)}.storage-node-child-main a{font-size:14px;font-weight:950}.storage-node-child-main span{display:block;margin-top:5px;font-size:9px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-node-child-main small{display:block;margin-top:5px;font-size:9px;color:#98a2b3}.storage-node-child-metrics{grid-template-columns:repeat(5,minmax(52px,1fr))}.storage-total-inline small{display:block;margin-top:4px;color:#667085;font-size:8px}
+html[data-theme=dark] .storage-vm-group-row+tr td,html[data-theme=dark] .storage-node-group-row+tr td{border-top-color:#31445e!important}html[data-theme=dark] .storage-child-item{background:#0f1b2c;border-color:#31445e}html[data-theme=dark] .storage-child-title span,html[data-theme=dark] .storage-child-main code,html[data-theme=dark] .storage-child-main small,html[data-theme=dark] .storage-child-footer,html[data-theme=dark] .storage-node-child-main span,html[data-theme=dark] .storage-node-child-main small,html[data-theme=dark] .storage-group-uuid small,html[data-theme=dark] .storage-view-mode span,html[data-theme=dark] .storage-total-inline small{color:#9fb0c4}html[data-theme=dark] .storage-child-metric{border-left-color:#31445e}html[data-theme=dark] .storage-child-footer{border-top-color:#31445e}html[data-theme=dark] .storage-filtered-banner{background:#102a43;border-color:#175cd3;color:#b2ddff}
+@media(max-width:1250px){.storage-child-item,.storage-node-child-item{grid-template-columns:1fr 1fr}.storage-child-metrics,.storage-node-child-metrics{grid-column:1/-1}.storage-group-table{min-width:1420px}}
+</style>
+'''
+
+
+def _v48136_disk_child_html(node, vm_uuid, disk_row, period):
+    (
+        target, source, mount, device, block, fstype,
+        assigned, allocated, read_bps, write_bps,
+        read_iops, write_iops, last_seen,
+    ) = disk_row
+    dev = device or (("/dev/" + block) if block else "-")
+    filter_href = _storage_io_url(
+        _storage_io_params(), view="disks", node=node, mount=mount or "",
+        q=vm_uuid, period=period, sort="writeiops", order="desc", page=1,
+    )
+    return f'''
+      <div class="storage-child-item">
+        <div class="storage-child-main">
+          <div class="storage-child-title"><b>{escape(target or '-')}</b><span>{escape(mount or '-')} · {escape(dev)}</span></div>
+          <code title="{escape(source or '-',quote=True)}">{escape(source or '-')}</code>
+          <small>{escape(fstype or '-')} · sample {fmt_push(last_seen)}</small>
+        </div>
+        <div class="storage-child-cap">{_disk_io_capacity(allocated,assigned)}</div>
+        <div class="storage-child-metrics">
+          <div class="storage-child-metric"><span>READ</span><b>{_disk_io_rate(read_bps)}</b></div>
+          <div class="storage-child-metric"><span>WRITE</span><b>{_disk_io_rate(write_bps)}</b></div>
+          <div class="storage-child-metric"><span>R IOPS</span><b>{_disk_io_iops(read_iops)}</b></div>
+          <div class="storage-child-metric"><span>W IOPS</span><b>{_disk_io_iops(write_iops)}</b></div>
+        </div>
+        <div class="storage-child-footer"><span>Storage <b>{escape(mount or '-')}</b></span><span>Device <b>{escape(dev)}</b></span><a href="{escape(filter_href,quote=True)}">Open this storage</a></div>
+      </div>'''
+
+
+def _v48136_storage_disk_group_table(conn, values, start_ts):
+    groups, details, total = _v48133_storage_disk_groups(conn, values, start_ts)
+    body = []
+    for node, vm_uuid, public_ip, disk_count, assigned, allocated, rb, wb, ri, wi, seen in groups:
+        ip = compact_ipv4(public_ip)
+        node_href = url_for("node_page", node=node, period=values["period"], q=vm_uuid)
+        vm_href = url_for("vm_page", node=node, vm_uuid=vm_uuid, period=values["period"])
+        ip_line = f'<span class="storage-node-ip">{escape(ip)}<button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button></span>' if ip else ''
+        children = ''.join(
+            _v48136_disk_child_html(node, vm_uuid, row, values["period"])
+            for row in details.get((str(node), str(vm_uuid)), [])
+        )
+        body.append(f'''
+        <tr class="storage-vm-group-row">
+          <td class="storage-group-id storage-node-cell"><a href="{escape(node_href,quote=True)}"><b>{escape(node)}</b></a>{ip_line}</td>
+          <td class="storage-group-uuid"><span class="uuid-cell"><a href="{escape(vm_href,quote=True)}" title="{escape(vm_uuid,quote=True)}"><b class="mono">{escape(vm_uuid)}</b></a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></span><small>{safe_int(disk_count,0)} customer disk{'s' if safe_int(disk_count,0)!=1 else ''}</small></td>
+          <td><div class="storage-child-stack">{children}</div></td>
+          <td>{_disk_io_capacity(allocated,assigned,'total allocated / assigned')}</td>
+          <td class="num">{_disk_io_rate(rb)}</td><td class="num"><b>{_disk_io_rate(wb)}</b></td>
+          <td class="num">{_disk_io_iops(ri)}</td><td class="num"><b>{_disk_io_iops(wi)}</b></td><td class="num"><small>{fmt_push(seen)}</small></td>
+        </tr>''')
+    if not body:
+        body = ['<tr><td colspan="9" class="empty">No customer disk sample in this lookback</td></tr>']
+    h = lambda label,key: _storage_sort_header(values,label,key)
+    return f'''
+    {V48136_STORAGE_CSS}
+    <div class="card storage-table-card">
+      <div class="table-title-row"><div><h3>VM Disks</h3><div class="table-hint">All view groups every customer disk under its VM UUID. Select a storage mount to switch to one-disk-per-row troubleshooting.</div><div class="storage-view-mode"><b>VIEW: GROUPED BY UUID</b><span>One VM row, all vda/vdb/vdc inside</span></div></div></div>
+      <div class="table-wrap"><table class="storage-group-table storage-vm-group-table"><thead><tr>
+        <th>{h('NODE','node')}</th><th>{h('VM UUID','uuid')}</th><th><div>VIRTUAL DISKS</div><small>{h('COUNT','diskcount')}</small></th>
+        <th><div>TOTAL ALLOCATED / ASSIGNED</div><small>{h('ALLOC','allocated')} · {h('ASSIGNED','assigned')} · {h('%','allocpct')}</small></th>
+        <th>{h('READ','read')}</th><th>{h('WRITE','write')}</th><th>{h('R IOPS','readiops')}</th><th>{h('W IOPS','writeiops')}</th><th>{h('SEEN','seen')}</th>
+      </tr></thead><tbody>{''.join(body)}</tbody></table></div>{_storage_pager(values,total)}
+    </div>'''
+
+
+_v48136_storage_disk_filtered_base = _v48133_storage_disk_table
+
+
+def _v48133_storage_disk_table(conn, values, start_ts):
+    # All storage: compact VM hierarchy. A selected mount is a forensic view,
+    # so keep each matching virtual disk as an independent sortable row.
+    if not str(values.get("mount") or "").strip():
+        return _v48136_storage_disk_group_table(conn, values, start_ts)
+    filtered = _v48136_storage_disk_filtered_base(conn, values, start_ts)
+    clear_mount = _storage_io_url(values, mount="", page=1)
+    banner = (
+        V48136_STORAGE_CSS
+        + f'<div class="storage-filtered-banner"><div><b>FILTERED STORAGE: {escape(values.get("mount") or "-")}</b><span> · one matching virtual disk per row for direct I/O comparison</span></div><a href="{escape(clear_mount,quote=True)}">Back to grouped All view</a></div>'
+    )
+    return banner + filtered
+
+
+def _v48136_real_storage_rows(conn, values, start_ts):
+    where = ["s.last_seen>=?"]
+    params = [start_ts]
+    if values.get("node"):
+        where.append("s.node=?")
+        params.append(values["node"])
+    if values.get("mount"):
+        where.append("s.mount=?")
+        params.append(values["mount"])
+    if values.get("q"):
+        p = like_pattern(values["q"])
+        where.append(f"(s.node LIKE ? OR s.mount LIKE ? OR s.device LIKE ? OR s.block LIKE ? OR s.raid_level LIKE ? OR s.fstype LIKE ? OR {_v48133_public_ip_sql('s')} LIKE ?)")
+        params.extend([p] * 7)
+    rows = conn.execute(f'''
+      SELECT s.node,{_v48133_public_ip_sql('s')} AS public_ipv4,s.mount,s.device,s.block,s.raid_level,s.fstype,
+             s.size,s.used,s.avail,s.use_percent,s.read_bps,s.write_bps,s.read_iops,s.write_iops,s.util_percent,s.last_seen,
+             (SELECT COUNT(*) FROM vm_disk_current d WHERE d.node=s.node AND d.mount=s.mount AND d.role='customer') AS disk_count,
+             (SELECT COUNT(DISTINCT d.vm_uuid) FROM vm_disk_current d WHERE d.node=s.node AND d.mount=s.mount AND d.role='customer') AS vm_count
+      FROM node_storage_current s WHERE {' AND '.join(where)}
+    ''', params).fetchall()
+    chosen = {}
+    for row in rows:
+        node, _ip, mount, device, *_ = row
+        mount = str(mount or "").rstrip("/") or "/"
+        device = str(device or "")
+        if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+            continue
+        if "[" in device and device.endswith("]"):
+            continue
+        key = (str(node), _v48135_base_device(device) or ("mount:" + mount))
+        rank = _v48135_mount_rank(mount)
+        old = chosen.get(key)
+        if old is None or rank < old[0]:
+            chosen[key] = (rank, row)
+    return [item[1] for item in chosen.values()]
+
+
+def _v48136_node_mount_child(values, row):
+    node, _public_ip, mount, device, block, raid, fs, size, used, avail, usep, rb, wb, ri, wi, util, seen, disk_count, vm_count = row
+    dev = _v48135_base_device(device) or (("/dev/" + block) if block else "-")
+    filter_href = _storage_io_url(values, view="disks", node=node, mount=mount or "", q="", sort="writeiops", order="desc", page=1)
+    return f'''
+      <div class="storage-child-item storage-node-child-item">
+        <div class="storage-node-child-main"><a href="{escape(filter_href,quote=True)}">{escape(mount or '-')}</a><span>{escape(dev)} · {escape(raid or 'hardware/unknown RAID')} · {escape(fs or '-')}</span><small>{safe_int(vm_count,0)} VMs · {safe_int(disk_count,0)} disks · seen {fmt_push(seen)}</small></div>
+        <div class="storage-child-cap">{_disk_io_capacity(used,size,'used / size')}</div>
+        <div class="storage-child-metrics storage-node-child-metrics">
+          <div class="storage-child-metric"><span>READ</span><b>{_disk_io_rate(rb)}</b></div>
+          <div class="storage-child-metric"><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div>
+          <div class="storage-child-metric"><span>R IOPS</span><b>{_disk_io_iops(ri)}</b></div>
+          <div class="storage-child-metric"><span>W IOPS</span><b>{_disk_io_iops(wi)}</b></div>
+          <div class="storage-child-metric"><span>UTIL</span><b>{safe_float(util,0):.1f}%</b></div>
+        </div>
+      </div>'''
+
+
+def _v48136_storage_node_group_table(conn, values, start_ts):
+    rows = _v48136_real_storage_rows(conn, values, start_ts)
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(str(row[0]), []).append(row)
+    groups = []
+    for node, mounts in grouped.items():
+        mounts.sort(key=lambda r: _v48135_mount_rank(r[2]))
+        ip = next((compact_ipv4(r[1]) for r in mounts if compact_ipv4(r[1])), "")
+        size = sum(max(0, safe_int(r[7], 0)) for r in mounts)
+        used = sum(max(0, safe_int(r[8], 0)) for r in mounts)
+        rb = sum(max(0.0, safe_float(r[11], 0)) for r in mounts)
+        wb = sum(max(0.0, safe_float(r[12], 0)) for r in mounts)
+        ri = sum(max(0.0, safe_float(r[13], 0)) for r in mounts)
+        wi = sum(max(0.0, safe_float(r[14], 0)) for r in mounts)
+        util = max([max(0.0, safe_float(r[15], 0)) for r in mounts] or [0.0])
+        seen = max([safe_int(r[16], 0) for r in mounts] or [0])
+        disk_count = sum(max(0, safe_int(r[17], 0)) for r in mounts)
+        vm_count = len({str(d[0]) + "\x1f" + str(d[1]) for d in conn.execute("SELECT DISTINCT node,vm_uuid FROM vm_disk_current WHERE node=? AND role='customer'", (node,)).fetchall()})
+        groups.append((node, ip, mounts, size, used, rb, wb, ri, wi, util, seen, disk_count, vm_count))
+    metric = {
+        "node": lambda g: g[0].lower(), "mount": lambda g: str(g[2][0][2] if g[2] else "").lower(),
+        "size": lambda g: g[3], "used": lambda g: g[4], "usepct": lambda g: (g[4] / g[3]) if g[3] else 0,
+        "read": lambda g: g[5], "write": lambda g: g[6], "readiops": lambda g: g[7],
+        "writeiops": lambda g: g[8], "util": lambda g: g[9], "seen": lambda g: g[10],
+    }
+    if values["sort"] not in metric:
+        values["sort"] = "writeiops"
+    groups.sort(key=metric[values["sort"]], reverse=values["order"] != "asc")
+    total = len(groups)
+    pages = max(1, int(math.ceil(total / float(values["limit"]))))
+    values["page"] = min(values["page"], pages)
+    groups = groups[(values["page"]-1)*values["limit"]:values["page"]*values["limit"]]
+    body = []
+    for node, ip, mounts, size, used, rb, wb, ri, wi, util, seen, disk_count, vm_count in groups:
+        node_href = url_for("node_page", node=node, period=values["period"])
+        ip_line = f'<span class="storage-node-ip">{escape(ip)}<button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button></span>' if ip else ''
+        children = ''.join(_v48136_node_mount_child(values, row) for row in mounts)
+        body.append(f'''
+        <tr class="storage-node-group-row">
+          <td class="storage-group-id storage-node-cell"><a href="{escape(node_href,quote=True)}"><b>{escape(node)}</b></a>{ip_line}<small class="storage-count-sub">{len(mounts)} filesystems</small></td>
+          <td><div class="storage-child-stack">{children}</div></td>
+          <td>{_disk_io_capacity(used,size,'total used / size')}</td>
+          <td class="num">{_disk_io_rate(rb)}</td><td class="num"><b>{_disk_io_rate(wb)}</b></td><td class="num">{_disk_io_iops(ri)}</td><td class="num"><b>{_disk_io_iops(wi)}</b></td><td class="num"><b>{util:.1f}%</b></td><td class="num storage-total-inline"><b>{vm_count}</b><small>{disk_count} disks</small></td><td class="num"><small>{fmt_push(seen)}</small></td>
+        </tr>''')
+    if not body:
+        body = ['<tr><td colspan="10" class="empty">No real node storage sample in this lookback</td></tr>']
+    h = lambda label,key: _storage_sort_header(values,label,key)
+    return f'''
+    {V48136_STORAGE_CSS}
+    <div class="card storage-table-card">
+      <div class="table-title-row"><div><h3>Storage Node</h3><div class="table-hint">All view groups every real filesystem under its node. A separate LVM or RAID-backed /home remains a separate child storage.</div><div class="storage-view-mode"><b>VIEW: GROUPED BY NODE</b><span>One node row, all /, /home, /home2 and /home3 inside</span></div></div></div>
+      <div class="table-wrap"><table class="storage-group-table storage-node-group-table"><thead><tr>
+        <th>{h('NODE','node')}</th><th><div>FILESYSTEMS / STORAGE</div><small>{h('MOUNT','mount')}</small></th><th><div>TOTAL USED / SIZE</div><small>{h('USED','used')} · {h('SIZE','size')} · {h('%','usepct')}</small></th>
+        <th>{h('READ','read')}</th><th>{h('WRITE','write')}</th><th>{h('R IOPS','readiops')}</th><th>{h('W IOPS','writeiops')}</th><th>{h('HOT UTIL','util')}</th><th>VM / DISKS</th><th>{h('SEEN','seen')}</th>
+      </tr></thead><tbody>{''.join(body)}</tbody></table></div>{_storage_pager(values,total)}
+    </div>'''
+
+
+_v48136_storage_node_filtered_base = _v48133_storage_node_table
+
+
+def _v48133_storage_node_table(conn, values, start_ts):
+    if not str(values.get("mount") or "").strip():
+        return _v48136_storage_node_group_table(conn, values, start_ts)
+    filtered = _v48136_storage_node_filtered_base(conn, values, start_ts)
+    clear_mount = _storage_io_url(values, mount="", page=1)
+    return (
+        V48136_STORAGE_CSS
+        + f'<div class="storage-filtered-banner"><div><b>FILTERED FILESYSTEM: {escape(values.get("mount") or "-")}</b><span> · matching node mount rows</span></div><a href="{escape(clear_mount,quote=True)}">Back to grouped All view</a></div>'
+        + filtered
+    )

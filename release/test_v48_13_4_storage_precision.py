@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Regression coverage for v48.13.5-r2 filesystem precision and VM disk panels.
+"""Regression coverage for v48.13.6-r1 grouped storage and filesystem precision.
 
 Checks:
 - per-disk Agent payload and robust /home mount discovery;
 - Top VM total Host Allocated / Assigned column and disk sorting;
 - VM detail per-disk capacity cards and per-disk I/O table placement;
-- one-row-per-disk VM Disks, Storage Node search/IP/copy UI;
+- grouped VM Disks/Storage Node All views plus per-mount forensic views;
 - Node Filesystems fallback for a separate /home mount;
 - exact UUID purge that preserves every unrelated VM's Abuse state/history.
 """
@@ -65,17 +65,21 @@ def main():
     source = app_path.read_text(encoding="utf-8")
     agent_source = agent_path.read_text(encoding="utf-8")
 
-    check('V48135_VERSION = "48.13.5"' in source, "v48.13.5 marker is missing")
-    check('V48135_BUILD = "r2"' in source, "v48.13.5-r2 marker is missing")
+    check('V48136_VERSION = "48.13.6"' in source, "v48.13.6 marker is missing")
+    check('V48136_BUILD = "r1"' in source, "v48.13.6-r1 marker is missing")
     check('disk-capacity-sort-head' in source and 'diskallocated' in source and 'diskassigned' in source, "Top VM disk capacity sorting is missing")
     check('Virtual Disk I/O' in source and 'vm-disk-total-overview' in source, "VM overview/per-disk detail UI is missing")
     check('TOTAL HOST ALLOCATED / ASSIGNED' not in source, "obsolete total strip is still present in Virtual Disk I/O")
-    check('Storage Node' in source and 'storage-disk-detail-table' in source and 'storage-single-disk-row' in source, "one-row-per-disk Storage I/O UI is missing")
+    check('Storage Node' in source and 'storage-vm-group-row' in source and 'storage-node-group-row' in source, "grouped Storage I/O UI is missing")
     check('Search node, IP, UUID, disk, path or mount' in source, "Storage I/O search bar is missing")
     check('def purge_vm_data(conn, node, vm_uuid' in source and 'DELETE FROM {table} WHERE vm_uuid=?' in source, "exact UUID purge override is missing")
     check("NOT IN ('cycles-v2','cycles-v3','cycles-v3-ram')" in source, "app import can still reset current abuse for the final engine")
     check('All status' in source and 'Active' in source and 'Hidden' in source and 'Stale' in source, "Admin status filters are missing")
     check('AGENT_VERSION = 12' in agent_source, "Agent v12 marker is missing")
+    agent_installer = app_path.parent.parent / 'deploy' / 'agent' / 'install-agent.sh'
+    if agent_installer.exists():
+        installer_source = agent_installer.read_text(encoding='utf-8')
+        check('ProtectHome=read-only' in installer_source and 'ProtectHome=true' not in installer_source, "Agent service still hides /home")
     check('"virsh", "domstats", "--list-active", "--vcpu", "--balloon", "--block"' in agent_source, "Agent no longer uses one bulk domstats call")
     check('_collect_df_filesystems' in agent_source and '_collect_findmnt_metadata' in agent_source and '_dedupe_filesystem_roots' in agent_source, "Agent does not merge df/findmnt or dedupe filesystem roots")
     check('Do not require SOURCE to start with /dev/' in agent_source, "mount mapping still rejects non-/dev storage sources")
@@ -175,6 +179,9 @@ def main():
             conn.close()
 
         # Top VM: total capacity is between RAM and Disk R/s and sortable.
+        check(mod.clean_top_sort("diskallocated") == "diskallocated", "Top VM sanitizer discards ALLOC sort")
+        check(mod.clean_top_sort("diskassigned") == "diskassigned", "Top VM sanitizer discards ASSIGNED sort")
+        check(mod.clean_top_sort("diskallocpct") == "diskallocpct", "Top VM sanitizer discards % sort")
         with mod.app.test_request_context("/top?period=5m&sort=diskallocated&order=desc"):
             rows, *_ = mod.get_top_vm_rows("5m", sort_by="diskallocated", order="desc", limit=100)
             check(rows and rows[0][1] == vm_uuid, "Top VM disk allocated sort is wrong")
@@ -197,22 +204,34 @@ def main():
         check(vm_html.index("Overview") < vm_html.index("Virtual Disk I/O") < vm_html.index("Average Mbps"), "VM disk detail is not between Overview and charts")
         check("cloud-drive.img" not in vm_html, "auxiliary cloud disk leaked into VM customer disk detail")
 
-        # Storage I/O: one row per customer disk, with IP/search/copy and visible UUID on every row.
+        # Storage I/O All view: one VM row with all customer disks nested.
         with mod.app.test_request_context("/storage?view=disks&period=15m&sort=allocated&order=desc&q=167.253.159.3"):
             disk_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("Search node, IP, UUID, disk, path or mount" in disk_html, "Storage search field is missing")
         check("167.253.159.3" in disk_html and 'data-copy="167.253.159.3"' in disk_html, "node IP/copy is missing")
         check(vm_uuid in disk_html and f'data-copy="{vm_uuid}"' in disk_html, "UUID/copy is missing")
-        check(disk_html.count("storage-single-disk-row") >= 2 and "vda" in disk_html and "vdb" in disk_html, "VM disks are not rendered as separate rows")
-        check(disk_html.count(vm_uuid) >= 2, "UUID is not visible on every per-disk row")
+        check("VIEW: GROUPED BY UUID" in disk_html and "storage-vm-group-row" in disk_html, "VM Disks All view is not grouped by UUID")
+        check("vda" in disk_html and "vdb" in disk_html and disk_html.count("storage-child-item") >= 2, "grouped VM row does not contain all disks")
         check("cloud-drive.img" not in disk_html, "auxiliary disk leaked into grouped VM disks")
 
-        # Storage Node must show all mounts, including a separate 200 TiB /home.
+        # Selecting a storage mount switches to one matching disk per row.
+        with mod.app.test_request_context("/storage?view=disks&period=15m&node=UT-Storage-1&mount=/home2&sort=writeiops&order=desc"):
+            filtered_disk_html = response_html(mod.app.view_functions["storage_io_page"]())
+        check("FILTERED STORAGE: /home2" in filtered_disk_html, "filtered storage mode banner is missing")
+        check("storage-single-disk-row" in filtered_disk_html and "vdb" in filtered_disk_html, "filtered storage mode is not one disk per row")
+
+        # Storage Node All view groups all real mounts under one node.
         with mod.app.test_request_context("/storage?view=nodes&period=15m&q=home"):
             node_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("Storage Node" in node_html and "Storage Backends" not in node_html, "Storage Backends was not renamed")
+        check("VIEW: GROUPED BY NODE" in node_html and "storage-node-group-row" in node_html, "Storage Node All view is not grouped by node")
         check("/home" in node_html and "/dev/mapper/storage-home" in node_html and "200.00 TiB" in node_html, "separate /home storage is missing or incorrectly collapsed into /")
-        check("167.253.159.3" in node_html, "Storage Node does not show node IP")
+        check("/home2" in node_html and "167.253.159.3" in node_html, "grouped Storage Node is missing a child mount or IP")
+
+        # Selecting a filesystem keeps the direct matching-mount table.
+        with mod.app.test_request_context("/storage?view=nodes&period=15m&node=UT-Storage-1&mount=/home"):
+            filtered_node_html = response_html(mod.app.view_functions["storage_io_page"]())
+        check("FILTERED FILESYSTEM: /home" in filtered_node_html, "filtered filesystem mode banner is missing")
 
         # Node Filesystems fallback appends current mounts missing from a retained snapshot.
         conn = mod.db()
@@ -262,7 +281,7 @@ def main():
         finally:
             conn.close()
 
-    print("PASS: v48.13.5-r2 filesystem precision, exact UUID purge, Top VM ALLOC/ASSIGNED/% sorting, clean per-disk VM panels and separate /home mounts")
+    print("PASS: v48.13.6-r1 grouped Storage I/O, working Top VM ALLOC/ASSIGNED/% sorting, visible /home and exact UUID purge")
     return 0
 
 

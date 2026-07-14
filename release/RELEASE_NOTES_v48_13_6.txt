@@ -1,0 +1,8 @@
+BW Monitor 48.13.6-prod-r1-storage-grouped
+
+- Top VM ALLOC / ASSIGNED / % sort is now functional.
+- VM Disks All view is grouped by node + UUID, with all customer disks nested inside.
+- Selecting a storage mount changes VM Disks to one disk per row for direct comparison.
+- Storage Node All view is grouped by node, with all real filesystems nested inside.
+- Selecting a mount changes Storage Node to detailed matching filesystem rows.
+- Agent service uses ProtectHome=read-only so a separate /home remains visible in hardened systemd mode.

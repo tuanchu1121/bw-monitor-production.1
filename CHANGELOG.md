@@ -1,5 +1,13 @@
 # Changelog
 
+## 48.13.6-prod-r1-storage-grouped
+
+- Fixed Top VM `ALLOC`, `ASSIGNED`, and `%` sorting by allowing the new disk sort keys through the final request sanitizer.
+- Changed VM Disks All view to one row per VM UUID with `vda`, `vdb`, `vdc`, and all customer disks nested inside; selecting a storage mount keeps the forensic one-disk-per-row view.
+- Changed Storage Node All view to one row per node with every real filesystem nested inside; selecting a mount keeps the detailed per-filesystem view.
+- Changed Agent systemd hardening from `ProtectHome=true` to `ProtectHome=read-only` so a separate LVM/RAID `/home` is visible to the collector without granting write access.
+- Preserved the original Dashboard, Abuse, Node Health, Admin, CPU, RAM, network, charts, exact UUID purge, and per-disk VM detail behavior.
+
 ## 48.13.5-prod-r2-vm-disk-panels
 
 - Removed the repeated `TOTAL HOST ALLOCATED / ASSIGNED` strip from VM Detail → Virtual Disk I/O.

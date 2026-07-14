@@ -171,7 +171,7 @@
           KillSignal=SIGTERM
           NoNewPrivileges=true
           PrivateTmp=true
-          ProtectHome=true
+          ProtectHome=read-only
           ProtectSystem=full
           ReadWritePaths=/var/lib/bw-agent /run
           ProtectKernelTunables=true

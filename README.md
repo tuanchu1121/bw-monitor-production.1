@@ -1,8 +1,8 @@
-# BW Monitor v48.13.5-r2 VM Disk Panels Production
+# BW Monitor v48.13.6-r1 Grouped Storage Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor 48.13.5-prod-r2-vm-disk-panels**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor 48.13.6-prod-r1-storage-grouped**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -338,7 +338,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.5-prod-r1`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.6-prod-r1`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
@@ -368,6 +368,14 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
 
 
+
+
+### Grouped Storage I/O and working disk sorting (48.13.6-r1)
+
+- Top VM `ALLOC`, `ASSIGNED`, and `%` links now survive sort sanitization and perform real total-per-VM disk sorting.
+- VM Disks All view groups every customer disk under one node/UUID row; selecting a storage mount switches to one-disk-per-row troubleshooting.
+- Storage Node All view groups `/`, `/home`, `/home2`, and other real filesystems under one node row; selecting a mount switches to detailed matching rows.
+- Agent service uses `ProtectHome=read-only`, so hardened systemd collection can read a separate `/home` filesystem and map VM images stored there.
 
 ### VM disk panel cleanup (48.13.5-r2)
 

@@ -109,6 +109,8 @@ grep -q 'V48133_VERSION = "48.13.3"' "$APP_SRC" || die "Missing v48.13.3 storage
 grep -q 'V48134_VERSION = "48.13.4"' "$APP_SRC" || die "Missing v48.13.4 storage precision marker"
 grep -q 'V48135_VERSION = "48.13.5"' "$APP_SRC" || die "Missing v48.13.5 storage root-bars marker"
 grep -q 'V48135_BUILD = "r2"' "$APP_SRC" || die "Missing v48.13.5-r2 VM disk panels marker"
+grep -q 'V48136_VERSION = "48.13.6"' "$APP_SRC" || die "Missing v48.13.6 grouped storage marker"
+grep -q 'V48136_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.6-r1 grouped storage build marker"
 grep -q 'CREATE TABLE IF NOT EXISTS vm_disk_current' "$APP_SRC" || die "Missing per-disk current schema"
 grep -q 'AGENT_VERSION = 12' "$AGENT_SRC" || die "Missing Agent v12 real-filesystem collector"
 grep -q 'def _v48129_metric_abuse_time' "$APP_SRC" || die "Missing metric-local Abuse duration helper"
@@ -194,7 +196,7 @@ say "Run isolated regression suites on temporary SQLite databases"
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.13.5-r2 VM-disk-panels pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.13.6-r1 grouped-storage pre-flight checks passed. No files were installed."
   exit 0
 fi
 
