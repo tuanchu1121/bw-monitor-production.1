@@ -23,7 +23,7 @@ INTELLIGENCE_TEST_SRC="${19:-./test_v48_12_6_abuse_intelligence.py}"
 SIMPLE_ABUSE_TEST_SRC="${20:-./test_v48_12_7_simple_abuse_dashboard.py}"
 ABUSE_TABLE_TEST_SRC="${21:-./test_v48_12_8_abuse_table.py}"
 OPERATIONS_TEST_SRC="${22:-./test_v48_12_9_operations_ui.py}"
-STORAGE_TEST_SRC="${23:-./test_v48_13_2_storage_io.py}"
+STORAGE_TEST_SRC="${23:-./test_v48_13_4_storage_precision.py}"
 
 TARGET_DIR="${BW_MONITOR_DIR:-/opt/bw-monitor}"
 APP_TARGET="${BW_MONITOR_APP_TARGET:-$TARGET_DIR/app.py}"
@@ -106,6 +106,7 @@ grep -q 'V48128_VERSION = "48.12.8"' "$APP_SRC" || die "Missing v48.12.8 Abuse t
 grep -q 'V48129_VERSION = "48.12.9"' "$APP_SRC" || die "Missing v48.12.9 operations Abuse marker"
 grep -q 'V48129_BUILD = "r4"' "$APP_SRC" || die "Missing v48.12.9-r4 compact UI marker"
 grep -q 'V48133_VERSION = "48.13.3"' "$APP_SRC" || die "Missing v48.13.3 storage integration marker"
+grep -q 'V48134_VERSION = "48.13.4"' "$APP_SRC" || die "Missing v48.13.4 storage precision marker"
 grep -q 'CREATE TABLE IF NOT EXISTS vm_disk_current' "$APP_SRC" || die "Missing per-disk current schema"
 grep -q 'AGENT_VERSION = 11' "$AGENT_SRC" || die "Missing Agent v11 per-disk collector"
 grep -q 'def _v48129_metric_abuse_time' "$APP_SRC" || die "Missing metric-local Abuse duration helper"
@@ -191,7 +192,7 @@ say "Run isolated regression suites on temporary SQLite databases"
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.13.3 storage-integrated pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.13.4 storage-precision pre-flight checks passed. No files were installed."
   exit 0
 fi
 

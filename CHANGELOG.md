@@ -1,5 +1,16 @@
 # Changelog
 
+## 48.13.4-prod-r1-storage-precision
+
+- Fixed the maintenance-import migration bug that cleared every VM's Current Abuse when one UUID purge job started. Purging one UUID now removes only that UUID while unrelated Current Abuse and Abuse Events remain visible immediately.
+- Purge-by-UUID removes all copies of that UUID from VM-scoped current caches, 5-minute/history tables, inventory, disk current data and Abuse history without deleting node storage metrics.
+- Fixed separate `/home`, `/home2`, `/home3`, LVM, device-mapper and mdraid discovery by recursively parsing `findmnt` and resolving block counters through `MAJ:MIN`.
+- Fixed Node Filesystems so current Read, Write, Read IOPS, Write IOPS and Util are overlaid onto every retained mount row instead of only `/`.
+- Kept Top VM one-row-per-VM and added a compact sortable total Host Allocated / Assigned meter between RAM and Disk R/s with tighter, aligned column widths.
+- Added per-disk capacity cards to VM Overview and separate per-disk I/O panels between Overview and charts.
+- Changed Storage I/O VM Disks to one real customer disk per row with search, node IP, UUID copy, capacity meter, I/O and IOPS sorting. Renamed Storage Backends to Storage Node.
+- Added Active, Hidden and Stale filters to Admin node and VM inventory.
+
 ## 48.13.3-prod-r1-storage-integrated
 
 - Fixed exact UUID purge so deleting one VM removes only that VM from Current Abuse, Abuse Events, Top VM, Dashboard, retained 5-minute/history data and disk current data. Unrelated VMs remain visible immediately.

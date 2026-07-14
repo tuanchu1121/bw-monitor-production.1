@@ -14765,8 +14765,8 @@ def _v4810_migrate_schema():
                 policy_applied_at=0,
                 last_eval_bucket=0,
                 engine_version=?
-            WHERE COALESCE(engine_version,'') != ?
-        """, (ABUSE_ENGINE_VERSION, ABUSE_ENGINE_VERSION))
+            WHERE COALESCE(engine_version,'') NOT IN ('cycles-v2','cycles-v3','cycles-v3-ram')
+        """, (ABUSE_ENGINE_VERSION,))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -24488,29 +24488,32 @@ def _v48133_top_disk_capacity(allocated, assigned, count):
 
 
 V48133_TOP_CSS = r'''
-<style id="v48133-top-disk-capacity">
-body.app-v490.endpoint-top-page .table-top-vm{min-width:2475px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-rank{width:34px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-node{width:150px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-uuid{width:300px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-ifaces{width:54px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-public,body.app-v490.endpoint-top-page .table-top-vm col.top-private{width:92px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-total{width:103px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-mbps{width:82px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-peakmbps{width:88px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-pps{width:88px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-peakpps{width:92px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-sample{width:112px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-cpu{width:122px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-vcpu{width:48px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-ram{width:174px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-diskcap{width:210px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-diskr,body.app-v490.endpoint-top-page .table-top-vm col.top-diskw{width:96px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-push{width:64px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-drops{width:52px!important}
-body.app-v490.endpoint-top-page .table-top-vm col.top-errors{width:46px!important}
-.disk-cap-compact-head{display:grid;gap:5px;justify-items:center}.disk-cap-compact-head>div{font-weight:950;white-space:nowrap}.disk-cap-compact-head small{display:flex;gap:4px;align-items:center;justify-content:center;white-space:nowrap}.disk-cap-sort-link{font-size:9px!important;padding:1px 2px!important}
-.top-disk-capacity{min-width:0;text-align:left}.top-disk-capacity>b{display:block;font-size:12px;line-height:1.15;white-space:nowrap}.top-disk-capacity>b span{font-size:9.5px;color:#667085}.top-disk-capacity .disk-cap-meter{height:5px;margin-top:7px}.top-disk-capacity small{display:block;margin-top:5px;font-size:8.5px;color:#667085;white-space:nowrap}.top-disk-na{text-align:center}.top-disk-na b{color:#98a2b3}
+<style id="v48134-top-disk-capacity">
+body.app-v490.endpoint-top-page .table-top-vm{min-width:2185px!important;table-layout:fixed!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-rank{width:30px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-node{width:135px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-uuid{width:290px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-ifaces{width:48px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-public,body.app-v490.endpoint-top-page .table-top-vm col.top-private{width:78px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-total{width:88px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-mbps{width:72px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-peakmbps{width:76px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-pps{width:78px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-peakpps{width:82px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-sample{width:96px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-cpu{width:112px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-vcpu{width:44px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-ram{width:168px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-diskcap{width:190px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-diskr,body.app-v490.endpoint-top-page .table-top-vm col.top-diskw{width:86px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-push{width:58px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-drops{width:46px!important}
+body.app-v490.endpoint-top-page .table-top-vm col.top-errors{width:42px!important}
+body.app-v490.endpoint-top-page .table-top-vm th,body.app-v490.endpoint-top-page .table-top-vm td{padding-left:8px!important;padding-right:8px!important}
+body.app-v490.endpoint-top-page .table-top-vm .rank-cell{font-size:10px!important;padding-left:3px!important;padding-right:3px!important}
+body.app-v490.endpoint-top-page .table-top-vm .uuid-cell>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.disk-cap-compact-head{display:grid;gap:4px;justify-items:center}.disk-cap-compact-head>div{font-weight:950;white-space:nowrap;font-size:10px}.disk-cap-compact-head small{display:flex;gap:3px;align-items:center;justify-content:center;white-space:nowrap}.disk-cap-sort-link{font-size:8.5px!important;padding:1px!important}
+.top-disk-capacity{min-width:0;text-align:left}.top-disk-capacity>b{display:block;font-size:11px;line-height:1.15;white-space:nowrap}.top-disk-capacity>b span{font-size:9px;color:#667085}.top-disk-capacity .disk-cap-meter{height:5px;margin-top:6px}.top-disk-capacity small{display:block;margin-top:4px;font-size:8px;color:#667085;white-space:nowrap}.top-disk-na{text-align:center}.top-disk-na b{color:#98a2b3}
 html[data-theme=dark] .top-disk-capacity>b span,html[data-theme=dark] .top-disk-capacity small{color:#9fb0c4}
 </style>
 '''
@@ -24600,18 +24603,33 @@ def _v48133_vm_disks(node, vm_uuid):
         conn.close()
 
 
+def _v48133_disk_level(pct):
+    if pct >= 90:
+        return "critical"
+    if pct >= 75:
+        return "hot"
+    if pct >= 50:
+        return "warm"
+    return "ok"
+
+
 def _v48133_vm_disk_overview_cards(rows):
+    """One compact Overview card per customer disk, matching CPU/RAM language."""
     cards = []
     for target,source,mount,device,block,fstype,assigned,allocated,physical,rb,wb,ri,wi,seen in rows:
-        pct = allocated * 100.0 / assigned if safe_int(assigned,0) > 0 else 0.0
-        storage = mount or "-"
+        assigned = max(0, safe_int(assigned, 0))
+        allocated = max(0, safe_int(allocated, 0))
+        pct = allocated * 100.0 / assigned if assigned > 0 else 0.0
+        level = _v48133_disk_level(pct)
         dev = device or (("/dev/" + block) if block else "-")
         cards.append(
-            f'<div class="stat vm-overview-disk-stat">'
+            f'<div class="stat vm-overview-disk-stat disk-level-{level}">'
             f'<div class="vm-disk-stat-label">DISK {escape(target or "-")}</div>'
             f'<b>{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b>'
+            f'<small>{pct:.1f}% allocated</small>'
             f'<span class="vm-disk-overview-meter"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></span>'
-            f'<small>{pct:.1f}% allocated · {escape(storage)} · {escape(dev)}</small>'
+            f'<small class="vm-disk-storage-line">{escape(mount or "-")} · {escape(dev)}</small>'
+            f'<small class="vm-disk-live-line">R {_disk_io_rate(rb)} · W {_disk_io_rate(wb)} · IOPS {_disk_io_iops(ri)} / {_disk_io_iops(wi)}</small>'
             f'</div>'
         )
     return "".join(cards)
@@ -24619,45 +24637,68 @@ def _v48133_vm_disk_overview_cards(rows):
 
 def _v48133_vm_disk_io_card(rows):
     if not rows:
-        return ''
-    body = []
-    total_assigned = total_allocated = 0
+        return ""
+    panels = []
+    total_assigned = total_allocated = total_physical = 0
     total_read = total_write = total_ri = total_wi = 0.0
     latest = 0
     for target,source,mount,device,block,fstype,assigned,allocated,physical,rb,wb,ri,wi,seen in rows:
-        total_assigned += max(0, safe_int(assigned,0))
-        total_allocated += max(0, safe_int(allocated,0))
-        total_read += max(0.0, safe_float(rb,0))
-        total_write += max(0.0, safe_float(wb,0))
-        total_ri += max(0.0, safe_float(ri,0))
-        total_wi += max(0.0, safe_float(wi,0))
-        latest = max(latest, safe_int(seen,0))
+        assigned = max(0, safe_int(assigned, 0))
+        allocated = max(0, safe_int(allocated, 0))
+        physical = max(0, safe_int(physical, 0))
+        pct = allocated * 100.0 / assigned if assigned > 0 else 0.0
+        level = _v48133_disk_level(pct)
+        total_assigned += assigned
+        total_allocated += allocated
+        total_physical += physical
+        total_read += max(0.0, safe_float(rb, 0))
+        total_write += max(0.0, safe_float(wb, 0))
+        total_ri += max(0.0, safe_float(ri, 0))
+        total_wi += max(0.0, safe_float(wi, 0))
+        latest = max(latest, safe_int(seen, 0))
         dev = device or (("/dev/" + block) if block else "-")
-        body.append(
-            '<tr>'
-            f'<td class="vm-disk-id"><b>{escape(target or "-")}</b><small title="{escape(source or "-",quote=True)}">{escape(source or "-")}</small></td>'
-            f'<td class="vm-disk-storage"><b>{escape(mount or "-")}</b><small>{escape(dev)} · {escape(fstype or "-")}</small></td>'
-            f'<td>{_disk_io_capacity(allocated,assigned)}</td>'
-            f'<td class="num">{_disk_io_rate(rb)}</td><td class="num"><b>{_disk_io_rate(wb)}</b></td>'
-            f'<td class="num">{_disk_io_iops(ri)}</td><td class="num"><b>{_disk_io_iops(wi)}</b></td>'
-            f'<td class="num"><small>{fmt_push(seen)}</small></td>'
-            '</tr>'
-        )
-    total = _disk_io_capacity(total_allocated,total_assigned)
+        panels.append(f'''
+        <article class="vm-disk-panel disk-level-{level}">
+          <div class="vm-disk-panel-head">
+            <div><span>VIRTUAL DISK</span><h4>{escape(target or "-")}</h4></div>
+            <div class="vm-disk-storage-badge"><b>{escape(mount or "-")}</b><small>{escape(dev)}</small></div>
+          </div>
+          <div class="vm-disk-panel-capacity">
+            <div><span>HOST ALLOCATED / ASSIGNED</span><b>{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b><small>{pct:.1f}% allocated</small></div>
+            <span class="vm-disk-overview-meter"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></span>
+          </div>
+          <div class="vm-disk-panel-metrics">
+            <div><span>READ</span><b>{_disk_io_rate(rb)}</b></div>
+            <div><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div>
+            <div><span>READ IOPS</span><b>{_disk_io_iops(ri)}</b></div>
+            <div><span>WRITE IOPS</span><b>{_disk_io_iops(wi)}</b></div>
+          </div>
+          <div class="vm-disk-panel-meta">
+            <div><span>SOURCE</span><code title="{escape(source or '-', quote=True)}">{escape(source or '-')}</code></div>
+            <div><span>FILESYSTEM</span><b>{escape(fstype or '-')}</b></div>
+            <div><span>PHYSICAL</span><b>{_disk_io_bytes(physical)}</b></div>
+            <div><span>LAST SAMPLE</span><b>{fmt_push(seen)}</b></div>
+          </div>
+        </article>''')
+    total_pct = total_allocated * 100.0 / total_assigned if total_assigned > 0 else 0.0
     return f'''
-    <div class="card vm-disk-detail-card">
-      <div class="table-title-row"><div><h3>Virtual Disk I/O</h3><div class="table-hint">Current per-disk sample. Allocation is host-side allocation, not guest filesystem used space.</div></div><div class="count-badges"><span>Disks <b>{len(rows)}</b></span><span>Read <b>{_disk_io_rate(total_read)}</b></span><span>Write <b>{_disk_io_rate(total_write)}</b></span><span>R/W IOPS <b>{_disk_io_iops(total_ri)} / {_disk_io_iops(total_wi)}</b></span><span>Seen <b>{fmt_push(latest)}</b></span></div></div>
-      <div class="vm-disk-total-capacity">{total}</div>
-      <div class="table-wrap"><table class="vm-disk-detail-table"><thead><tr><th>DISK / SOURCE</th><th>STORAGE</th><th>ALLOCATED / ASSIGNED</th><th>READ</th><th>WRITE</th><th>R IOPS</th><th>W IOPS</th><th>SEEN</th></tr></thead><tbody>{''.join(body)}</tbody></table></div>
+    <div class="card vm-disk-detail-card" id="virtual-disk-io">
+      <div class="table-title-row">
+        <div><h3>Virtual Disk I/O</h3><div class="table-hint">Each customer disk is separate. Capacity is host allocation / assigned virtual capacity; I/O is the latest per-disk sample.</div></div>
+        <div class="count-badges"><span>Disks <b>{len(rows)}</b></span><span>Allocated <b>{_disk_io_bytes(total_allocated)}</b></span><span>Assigned <b>{_disk_io_bytes(total_assigned)}</b></span><span>Read <b>{_disk_io_rate(total_read)}</b></span><span>Write <b>{_disk_io_rate(total_write)}</b></span><span>Seen <b>{fmt_push(latest)}</b></span></div>
+      </div>
+      <div class="vm-disk-total-strip"><div><span>TOTAL HOST ALLOCATED / ASSIGNED</span><b>{_disk_io_bytes(total_allocated)} / {_disk_io_bytes(total_assigned)}</b><small>{total_pct:.1f}% · Physical {_disk_io_bytes(total_physical)} · R/W IOPS {_disk_io_iops(total_ri)} / {_disk_io_iops(total_wi)}</small></div><span class="vm-disk-overview-meter"><i style="width:{min(100.0,max(0.0,total_pct)):.1f}%"></i></span></div>
+      <div class="vm-disk-detail-grid">{''.join(panels)}</div>
     </div>
     '''
 
 
 V48133_VM_CSS = r'''
-<style id="v48133-vm-disk-detail">
-.vm-overview-disk-stat{min-width:210px}.vm-disk-stat-label{font-size:10px;font-weight:900;color:#667085;letter-spacing:.04em}.vm-overview-disk-stat>b{margin-top:5px!important;font-size:15px!important}.vm-disk-overview-meter{display:block;height:6px;margin-top:8px;border-radius:999px;background:#e4e7ec;overflow:hidden}.vm-disk-overview-meter i{display:block;height:100%;border-radius:inherit;background:#12b76a}.vm-overview-disk-stat small{margin-top:6px!important;line-height:1.3!important}
-.vm-disk-detail-card{margin-top:16px}.vm-disk-total-capacity{max-width:300px;margin:12px 0}.vm-disk-detail-table{min-width:1420px;table-layout:fixed}.vm-disk-detail-table th:nth-child(1){width:340px}.vm-disk-detail-table th:nth-child(2){width:220px}.vm-disk-detail-table th:nth-child(3){width:270px}.vm-disk-detail-table th:nth-child(n+4){width:125px}.vm-disk-detail-table td{vertical-align:middle}.vm-disk-detail-table td.num{text-align:right;white-space:nowrap}.vm-disk-id b,.vm-disk-id small,.vm-disk-storage b,.vm-disk-storage small{display:block}.vm-disk-id small{margin-top:5px;color:#98a2b3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-storage small{margin-top:5px;color:#667085}
-html[data-theme=dark] .vm-disk-stat-label,html[data-theme=dark] .vm-disk-storage small{color:#9fb0c4}html[data-theme=dark] .vm-disk-overview-meter{background:#334155}
+<style id="v48134-vm-disk-detail">
+.vm-overview-disk-stat{min-width:225px}.vm-disk-stat-label{font-size:10px;font-weight:950;color:#667085;letter-spacing:.055em}.vm-overview-disk-stat>b{display:block;margin-top:5px!important;font-size:15px!important;white-space:nowrap}.vm-overview-disk-stat>small{display:block;margin-top:4px!important}.vm-disk-overview-meter{display:block;height:6px;margin-top:8px;border-radius:999px;background:#e4e7ec;overflow:hidden}.vm-disk-overview-meter i{display:block;height:100%;border-radius:inherit;background:#12b76a}.disk-level-warm .vm-disk-overview-meter i{background:#fdb022}.disk-level-hot .vm-disk-overview-meter i{background:#f79009}.disk-level-critical .vm-disk-overview-meter i{background:#f04438}.vm-disk-storage-line{color:#667085!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-live-line{color:#475467!important;font-size:9px!important;line-height:1.35!important}
+.vm-disk-detail-card{margin-top:16px}.vm-disk-total-strip{display:grid;grid-template-columns:minmax(260px,420px);gap:8px;margin:13px 0 16px;padding:13px 14px;border:1px solid #dbe3ef;border-radius:12px;background:#f8fafc}.vm-disk-total-strip span,.vm-disk-panel-capacity span,.vm-disk-panel-metrics span,.vm-disk-panel-meta span{display:block;color:#667085;font-size:9px;font-weight:900;letter-spacing:.055em}.vm-disk-total-strip b{display:block;margin-top:4px;font-size:16px}.vm-disk-total-strip small{display:block;margin-top:4px;color:#667085}.vm-disk-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(410px,1fr));gap:12px}.vm-disk-panel{border:1px solid #dbe3ef;border-radius:13px;padding:14px;background:#fff;min-width:0}.vm-disk-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.vm-disk-panel-head span{font-size:9px;color:#667085;font-weight:900;letter-spacing:.07em}.vm-disk-panel-head h4{font-size:18px;margin:3px 0 0}.vm-disk-storage-badge{text-align:right;min-width:0}.vm-disk-storage-badge b,.vm-disk-storage-badge small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.vm-disk-storage-badge b{font-size:12px}.vm-disk-storage-badge small{margin-top:3px;color:#667085;font-size:9px}.vm-disk-panel-capacity{margin-top:13px}.vm-disk-panel-capacity b{display:block;margin-top:4px;font-size:15px}.vm-disk-panel-capacity small{display:block;margin-top:3px;color:#667085;font-size:10px}.vm-disk-panel-metrics{display:grid;grid-template-columns:repeat(4,minmax(80px,1fr));gap:8px;margin-top:13px}.vm-disk-panel-metrics>div{padding:10px;border-radius:9px;background:#f8fafc;border:1px solid #edf0f4}.vm-disk-panel-metrics b{display:block;margin-top:4px;font-size:12px;white-space:nowrap}.vm-disk-panel-meta{display:grid;grid-template-columns:minmax(180px,2fr) repeat(3,minmax(90px,1fr));gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid #edf0f4}.vm-disk-panel-meta b,.vm-disk-panel-meta code{display:block;margin-top:4px;font-size:10px}.vm-disk-panel-meta code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#475467}.vm-disk-panel.disk-level-hot,.vm-disk-panel.disk-level-critical{border-color:#fed7aa}.vm-disk-panel.disk-level-critical{border-color:#fda29b}
+html[data-theme=dark] .vm-disk-stat-label,html[data-theme=dark] .vm-disk-storage-line,html[data-theme=dark] .vm-disk-storage-badge small,html[data-theme=dark] .vm-disk-panel-capacity small,html[data-theme=dark] .vm-disk-total-strip span,html[data-theme=dark] .vm-disk-total-strip small,html[data-theme=dark] .vm-disk-panel-metrics span,html[data-theme=dark] .vm-disk-panel-meta span{color:#9fb0c4!important}html[data-theme=dark] .vm-disk-overview-meter{background:#334155}html[data-theme=dark] .vm-disk-total-strip,html[data-theme=dark] .vm-disk-panel-metrics>div{background:#132238;border-color:#31445e}html[data-theme=dark] .vm-disk-panel{background:#0f1b2c;border-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta{border-top-color:#31445e}html[data-theme=dark] .vm-disk-panel-meta code{color:#d0d9e7}
+@media(max-width:900px){.vm-disk-detail-grid{grid-template-columns:1fr}.vm-disk-panel-metrics{grid-template-columns:1fr 1fr}.vm-disk-panel-meta{grid-template-columns:1fr 1fr}}
 </style>
 '''
 
@@ -24678,17 +24719,21 @@ def vm_page_v48133():
         if not rows:
             return response
         html = response.get_data(as_text=True)
-        marker = '    </div></div>\n    <div class="vm-charts-grid">'
-        if marker not in html:
-            marker = '</div></div>\n    <div class="vm-charts-grid">'
-        if marker in html:
-            prefix = marker.split('<div class="vm-charts-grid">',1)[0]
-            replacement = _v48133_vm_disk_overview_cards(rows) + prefix + _v48133_vm_disk_io_card(rows) + '<div class="vm-charts-grid">'
-            html = html.replace(marker, replacement, 1)
+        if 'id="virtual-disk-io"' in html:
+            return response
+        cards = _v48133_vm_disk_overview_cards(rows)
+        details = _v48133_vm_disk_io_card(rows)
+        pattern = re.compile(
+            r'(<div class="card"><h3>Overview</h3><div class="grid">)(.*?)(</div></div>\s*)(<div class="vm-charts-grid">)',
+            re.S,
+        )
+        html, count = pattern.subn(lambda m: m.group(1) + m.group(2) + cards + m.group(3) + details + m.group(4), html, count=1)
+        if not count:
+            html = html.replace('<div class="vm-charts-grid">', details + '<div class="vm-charts-grid">', 1)
         html = html.replace('</head>', V48133_VM_CSS + '</head>', 1)
         response.set_data(html)
     except Exception:
-        app.logger.exception("Could not apply v48.13.3 VM disk details")
+        app.logger.exception("Could not apply v48.13.4 VM disk details")
     return response
 
 
@@ -24700,9 +24745,23 @@ _get_node_filesystems_snapshot_v48133_base = get_node_filesystems_snapshot
 
 
 def get_node_filesystems_snapshot(node, period):
-    """Keep retained capacity rows and append any current mount missing from them."""
-    rows = list(_get_node_filesystems_snapshot_v48133_base(node, period) or [])
-    by_mount = {str(r[0]): tuple(r) for r in rows if r}
+    """Merge retained capacity with the latest I/O sample for every mount.
+
+    Capacity continues to follow the selected retained snapshot.  Current block
+    I/O is overlaid by mount even when that mount already exists in the retained
+    row.  The previous append-only merge left `/home2` and `/home3` with dashes
+    because only newly discovered mounts received the current I/O columns.
+    """
+    retained = list(_get_node_filesystems_snapshot_v48133_base(node, period) or [])
+    by_mount = {}
+    for row in retained:
+        if not row:
+            continue
+        values = list(row)
+        while len(values) < 14:
+            values.append(0)
+        by_mount[str(values[0] or "")] = values[:14]
+
     conn = db()
     try:
         ensure_disk_io_schema(conn)
@@ -24721,15 +24780,34 @@ def get_node_filesystems_snapshot(node, period):
         """, (node,)).fetchall()
     finally:
         conn.close()
-    for r in current:
-        mount = str(r[0] or "")
-        if mount and mount not in by_mount:
-            by_mount[mount] = tuple(r)
+
+    for row in current:
+        values = list(row)
+        mount = str(values[0] or "")
+        if not mount:
+            continue
+        if mount in by_mount:
+            merged = by_mount[mount]
+            # Keep selected-snapshot capacity (0..7), overlay latest I/O (8..13).
+            merged[8:14] = values[8:14]
+            # Prefer a current source name only when retained metadata is blank.
+            if not merged[1] and values[1]:
+                merged[1] = values[1]
+            if not merged[2] and values[2]:
+                merged[2] = values[2]
+            by_mount[mount] = merged
+        else:
+            by_mount[mount] = values[:14]
+
     for mount,device,fstype,size,used,avail,usep,seen in latest_fs:
         mount = str(mount or "")
         if mount and mount not in by_mount:
-            by_mount[mount] = (mount,device,fstype,size,used,avail,usep,seen,0,0,0,0,0,0)
-    return sorted(by_mount.values(), key=lambda r: (-safe_float(r[6],0), str(r[0] or "").lower()))
+            by_mount[mount] = [mount,device,fstype,size,used,avail,usep,seen,0,0,0,0,0,0]
+
+    return sorted(
+        [tuple(v) for v in by_mount.values()],
+        key=lambda r: (-safe_float(r[6], 0), str(r[0] or "").lower()),
+    )
 
 
 def _v48133_public_ip_sql(alias="d"):
@@ -24835,29 +24913,77 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
 
 
 def _v48133_storage_disk_table(conn, values, start_ts):
-    groups, details, total = _v48133_storage_disk_groups(conn, values, start_ts)
+    """Render one real customer disk per row, never hide vda/vdb inside totals."""
+    sort_map = {
+        "node": "d.node", "uuid": "d.vm_uuid", "disk": "d.target", "mount": "d.mount",
+        "diskcount": "vm_disk_count", "assigned": "d.capacity_bytes", "allocated": "d.allocation_bytes",
+        "allocpct": "CASE WHEN d.capacity_bytes>0 THEN d.allocation_bytes*1.0/d.capacity_bytes ELSE 0 END",
+        "read": "d.read_bps", "write": "d.write_bps", "readiops": "d.read_iops",
+        "writeiops": "d.write_iops", "seen": "d.last_seen",
+    }
+    if values["sort"] not in sort_map:
+        values["sort"] = "writeiops"
+    where = ["d.role='customer'", "d.last_seen>=?", "COALESCE(vi.status,'active')!='hidden'"]
+    params = [start_ts]
+    if values.get("node"):
+        where.append("d.node=?")
+        params.append(values["node"])
+    if values.get("mount"):
+        where.append("d.mount=?")
+        params.append(values["mount"])
+    if values.get("q"):
+        p = like_pattern(values["q"])
+        where.append(f"(d.node LIKE ? OR d.vm_uuid LIKE ? OR d.target LIKE ? OR d.source LIKE ? OR d.mount LIKE ? OR d.storage_device LIKE ? OR d.storage_block LIKE ? OR {_v48133_public_ip_sql('d')} LIKE ?)")
+        params.extend([p] * 8)
+    where_sql = " AND ".join(where)
+    total = safe_int(conn.execute(f"""
+        SELECT COUNT(*)
+        FROM vm_disk_current d
+        LEFT JOIN vm_inventory vi ON vi.node=d.node AND vi.vm_uuid=d.vm_uuid
+        WHERE {where_sql}
+    """, params).fetchone()[0], 0)
+    pages = max(1, int(math.ceil(total / float(values["limit"]))))
+    values["page"] = min(values["page"], pages)
+    offset = (values["page"] - 1) * values["limit"]
+    direction = "ASC" if values["order"] == "asc" else "DESC"
+    rows = conn.execute(f"""
+        SELECT d.node,d.vm_uuid,{_v48133_public_ip_sql('d')} AS public_ipv4,
+               d.target,d.source,d.mount,d.storage_device,d.storage_block,d.storage_fstype,
+               d.capacity_bytes,d.allocation_bytes,d.physical_bytes,
+               d.read_bps,d.write_bps,d.read_iops,d.write_iops,d.last_seen,
+               (SELECT COUNT(*) FROM vm_disk_current x
+                WHERE x.node=d.node AND x.vm_uuid=d.vm_uuid AND x.role='customer') AS vm_disk_count
+        FROM vm_disk_current d
+        LEFT JOIN vm_inventory vi ON vi.node=d.node AND vi.vm_uuid=d.vm_uuid
+        WHERE {where_sql}
+        ORDER BY {sort_map[values['sort']]} {direction}, d.node COLLATE NOCASE, d.vm_uuid,
+                 CASE d.target WHEN 'vda' THEN 0 WHEN 'vdb' THEN 1 ELSE 2 END,
+                 d.target COLLATE NOCASE,d.source COLLATE NOCASE
+        LIMIT ? OFFSET ?
+    """, params + [values["limit"], offset]).fetchall()
+
     body = []
-    for node,vm_uuid,public_ip,disk_count,assigned,allocated,rb,wb,ri,wi,seen in groups:
-        vm_href = url_for("vm_page",node=node,vm_uuid=vm_uuid,period=values["period"])
-        node_href = url_for("node_page",node=node,period=values["period"],q=vm_uuid)
+    previous_vm = None
+    for row in rows:
+        node,vm_uuid,public_ip,target,source,mount,device,block,fstype,assigned,allocated,physical,rb,wb,ri,wi,seen,vm_disk_count = row
+        vm_href = url_for("vm_page", node=node, vm_uuid=vm_uuid, period=values["period"])
+        node_href = url_for("node_page", node=node, period=values["period"], q=vm_uuid)
         ip = compact_ipv4(public_ip)
+        dev = device or (("/dev/" + block) if block else "-")
+        group_key = (str(node), str(vm_uuid))
+        row_class = "storage-vm-start" if group_key != previous_vm else "storage-vm-cont"
+        previous_vm = group_key
         ip_line = f'<span class="storage-node-ip">{escape(ip)}<button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button></span>' if ip else ''
-        disk_lines = []
-        for target,source,mount,device,block,fstype,dcap,dalloc,drb,dwb,dri,dwi,dseen in details.get((str(node),str(vm_uuid)),[]):
-            dev = device or (("/dev/"+block) if block else "-")
-            pct = dalloc*100.0/dcap if safe_int(dcap,0)>0 else 0.0
-            disk_lines.append(
-                f'<div class="storage-vm-disk-line">'
-                f'<div class="storage-vm-disk-name"><b>{escape(target or "-")}</b><span>{escape(mount or "-")} · {escape(dev)}</span><small title="{escape(source or "-",quote=True)}">{escape(source or "-")}</small></div>'
-                f'<div class="storage-vm-disk-cap"><b>{_disk_io_bytes(dalloc)} / {_disk_io_bytes(dcap)}</b><span>{pct:.1f}%</span></div>'
-                f'<div class="storage-vm-disk-rates"><span>R <b>{_disk_io_rate(drb)}</b></span><span>W <b>{_disk_io_rate(dwb)}</b></span><span>IOPS <b>{_disk_io_iops(dri)} / {_disk_io_iops(dwi)}</b></span></div>'
-                f'</div>'
-            )
+        uuid_html = (
+            f'<span class="uuid-cell"><a href="{escape(vm_href,quote=True)}" title="{escape(vm_uuid,quote=True)}">{escape(vm_uuid)}</a>'
+            f'<button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></span>'
+            f'<small>{safe_int(vm_disk_count,0)} customer disk{"s" if safe_int(vm_disk_count,0) != 1 else ""}</small>'
+        )
         body.append(
-            '<tr>'
+            f'<tr class="{row_class}">'
             f'<td class="storage-node-cell"><a href="{escape(node_href,quote=True)}"><b>{escape(node)}</b></a>{ip_line}</td>'
-            f'<td class="storage-uuid-cell"><span class="uuid-cell"><a href="{escape(vm_href,quote=True)}" title="{escape(vm_uuid,quote=True)}">{escape(vm_uuid)}</a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></span><small>{disk_count} customer disk{"s" if disk_count != 1 else ""}</small></td>'
-            f'<td class="storage-vm-disks">{"".join(disk_lines)}</td>'
+            f'<td class="storage-uuid-cell">{uuid_html}</td>'
+            f'<td class="storage-one-disk"><div class="storage-disk-title"><b>{escape(target or "-")}</b><span>{escape(mount or "-")} · {escape(dev)}</span></div><code title="{escape(source or "-",quote=True)}">{escape(source or "-")}</code><small>{escape(fstype or "-")} · Physical {_disk_io_bytes(physical)}</small></td>'
             f'<td>{_disk_io_capacity(allocated,assigned)}</td>'
             f'<td class="num">{_disk_io_rate(rb)}</td><td class="num"><b>{_disk_io_rate(wb)}</b></td>'
             f'<td class="num">{_disk_io_iops(ri)}</td><td class="num"><b>{_disk_io_iops(wi)}</b></td><td class="num"><small>{fmt_push(seen)}</small></td>'
@@ -24865,15 +24991,15 @@ def _v48133_storage_disk_table(conn, values, start_ts):
         )
     if not body:
         body = ['<tr><td colspan="9" class="empty">No customer disk sample in this lookback</td></tr>']
-    h=lambda label,key:_storage_sort_header(values,label,key)
+    h = lambda label,key: _storage_sort_header(values,label,key)
     return (
         '<div class="card storage-table-card">'
-        '<div class="table-title-row"><div><h3>VM Disks</h3><div class="table-hint">One row per VM. Every customer disk is grouped under its UUID; totals remain sortable.</div></div></div>'
-        '<div class="table-wrap"><table class="storage-vm-group-table"><thead><tr>'
-        f'<th>{h("NODE","node")}</th><th>{h("VM UUID","uuid")}</th><th><div>DISKS</div><small>{h("COUNT","diskcount")}</small></th>'
+        '<div class="table-title-row"><div><h3>VM Disks</h3><div class="table-hint">One row per customer disk. UUID and node stay visible on every row, so vda/vdb are separate and sortable.</div></div></div>'
+        '<div class="table-wrap"><table class="storage-disk-detail-table"><thead><tr>'
+        f'<th>{h("NODE","node")}</th><th>{h("VM UUID","uuid")}</th><th><div>DISK / STORAGE</div><small>{h("DISK","disk")} · {h("STORAGE","mount")} · {h("COUNT","diskcount")}</small></th>'
         f'<th><div>ALLOCATED / ASSIGNED</div><small>{h("ALLOC","allocated")} · {h("ASSIGNED","assigned")} · {h("%","allocpct")}</small></th>'
         f'<th>{h("READ","read")}</th><th>{h("WRITE","write")}</th><th>{h("R IOPS","readiops")}</th><th>{h("W IOPS","writeiops")}</th><th>{h("SEEN","seen")}</th>'
-        '</tr></thead><tbody>'+''.join(body)+'</tbody></table></div>'+_storage_pager(values,total)+'</div>'
+        '</tr></thead><tbody>' + ''.join(body) + '</tbody></table></div>' + _storage_pager(values,total) + '</div>'
     )
 
 
@@ -24938,12 +25064,12 @@ def _v48133_storage_node_table(conn, values, start_ts):
 
 
 V48133_STORAGE_CSS = r'''
-<style id="v48133-storage-integrated">
-.storage-search-bar{display:grid;grid-template-columns:minmax(300px,1.8fr) minmax(150px,.7fr) minmax(150px,.7fr) 78px auto auto;gap:9px;align-items:end}.storage-search-bar label{display:grid;gap:5px;font-size:10px;font-weight:900;color:#667085}.storage-search-bar input,.storage-search-bar select{min-height:41px}.storage-search-bar .storage-search-input{font-size:13px;padding-left:38px;background-image:linear-gradient(transparent,transparent)}.storage-search-wrap{position:relative}.storage-search-wrap:before{content:'⌕';position:absolute;left:13px;bottom:9px;font-size:20px;color:#667085;z-index:2}.storage-search-wrap input{width:100%}.storage-search-bar button,.storage-search-bar .clear{min-height:41px;display:flex;align-items:center;justify-content:center}
-.storage-vm-group-table{min-width:1910px;table-layout:fixed}.storage-vm-group-table th:nth-child(1){width:185px}.storage-vm-group-table th:nth-child(2){width:305px}.storage-vm-group-table th:nth-child(3){width:560px}.storage-vm-group-table th:nth-child(4){width:260px}.storage-vm-group-table th:nth-child(n+5){width:120px}.storage-vm-group-table td{vertical-align:middle}.storage-vm-group-table td.num{text-align:right;white-space:nowrap}
-.storage-node-cell>a,.storage-node-cell>b,.storage-node-ip{display:block}.storage-node-ip{margin-top:5px;font-size:10px;color:#667085}.storage-node-ip .copy-btn{margin-left:5px;transform:scale(.86)}.storage-uuid-cell small{display:block;margin-top:7px;color:#667085}.storage-vm-disks{padding-top:5px!important;padding-bottom:5px!important}.storage-vm-disk-line{display:grid;grid-template-columns:minmax(170px,1.15fr) minmax(145px,.8fr) minmax(220px,1.15fr);gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #e4e7ec}.storage-vm-disk-line:last-child{border-bottom:0}.storage-vm-disk-name b,.storage-vm-disk-name span,.storage-vm-disk-name small{display:block}.storage-vm-disk-name b{font-size:12px}.storage-vm-disk-name span{margin-top:3px;font-size:10px;color:#667085}.storage-vm-disk-name small{margin-top:4px;font-size:8.5px;color:#98a2b3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-vm-disk-cap b,.storage-vm-disk-cap span{display:block}.storage-vm-disk-cap b{font-size:10.5px}.storage-vm-disk-cap span{margin-top:3px;font-size:9px;color:#667085}.storage-vm-disk-rates{display:flex;gap:9px;flex-wrap:wrap;font-size:9px;color:#667085}.storage-vm-disk-rates b{color:inherit}.storage-node-table{min-width:1680px;table-layout:fixed}.storage-node-table th:nth-child(1){width:210px}.storage-node-table th:nth-child(2){width:330px}.storage-node-table th:nth-child(3){width:270px}.storage-node-table th:nth-child(n+4){width:125px}.storage-node-table td.num{text-align:right;white-space:nowrap}.storage-count-sub{display:block;margin-top:4px;color:#667085}
-html[data-theme=dark] .storage-vm-disk-line{border-bottom-color:#31445e}html[data-theme=dark] .storage-node-ip,html[data-theme=dark] .storage-uuid-cell small,html[data-theme=dark] .storage-vm-disk-name span,html[data-theme=dark] .storage-vm-disk-cap span,html[data-theme=dark] .storage-vm-disk-rates,html[data-theme=dark] .storage-count-sub{color:#9fb0c4}
-@media(max-width:1100px){.storage-search-bar{grid-template-columns:1fr 1fr}.storage-vm-disk-line{grid-template-columns:1fr}}
+<style id="v48134-storage-integrated">
+.storage-search-bar{display:grid;grid-template-columns:minmax(340px,1.9fr) minmax(150px,.7fr) minmax(150px,.7fr) 78px auto auto;gap:9px;align-items:end}.storage-search-bar label{display:grid;gap:5px;font-size:10px;font-weight:900;color:#667085}.storage-search-bar input,.storage-search-bar select{min-height:41px}.storage-search-bar .storage-search-input{font-size:13px;padding-left:38px}.storage-search-wrap{position:relative}.storage-search-wrap:before{content:'⌕';position:absolute;left:13px;bottom:9px;font-size:20px;color:#667085;z-index:2}.storage-search-wrap input{width:100%}.storage-search-bar button,.storage-search-bar .clear{min-height:41px;display:flex;align-items:center;justify-content:center}
+.storage-disk-detail-table{min-width:1740px;table-layout:fixed}.storage-disk-detail-table th:nth-child(1){width:180px}.storage-disk-detail-table th:nth-child(2){width:300px}.storage-disk-detail-table th:nth-child(3){width:420px}.storage-disk-detail-table th:nth-child(4){width:255px}.storage-disk-detail-table th:nth-child(n+5){width:116px}.storage-disk-detail-table td{vertical-align:middle}.storage-disk-detail-table td.num{text-align:right;white-space:nowrap}.storage-disk-detail-table tr.storage-vm-start td{border-top:2px solid #dbe3ef!important}.storage-disk-detail-table tr.storage-vm-start:first-child td{border-top:0!important}.storage-disk-detail-table tr.storage-vm-cont td{background:#fbfcfe}
+.storage-node-cell>a,.storage-node-cell>b,.storage-node-ip{display:block}.storage-node-ip{margin-top:5px;font-size:10px;color:#667085}.storage-node-ip .copy-btn{margin-left:5px;transform:scale(.86)}.storage-uuid-cell small{display:block;margin-top:7px;color:#667085}.storage-one-disk{min-width:0}.storage-disk-title{display:flex;align-items:baseline;gap:8px;min-width:0}.storage-disk-title b{font-size:13px}.storage-disk-title span{font-size:10px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-one-disk code{display:block;margin-top:6px;font-size:9px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.storage-one-disk small{display:block;margin-top:5px;color:#98a2b3;font-size:9px}.storage-node-table{min-width:1640px;table-layout:fixed}.storage-node-table th:nth-child(1){width:200px}.storage-node-table th:nth-child(2){width:315px}.storage-node-table th:nth-child(3){width:260px}.storage-node-table th:nth-child(n+4){width:120px}.storage-node-table td.num{text-align:right;white-space:nowrap}.storage-count-sub{display:block;margin-top:4px;color:#667085}
+html[data-theme=dark] .storage-node-ip,html[data-theme=dark] .storage-uuid-cell small,html[data-theme=dark] .storage-disk-title span,html[data-theme=dark] .storage-one-disk code,html[data-theme=dark] .storage-one-disk small,html[data-theme=dark] .storage-count-sub{color:#9fb0c4}html[data-theme=dark] .storage-disk-detail-table tr.storage-vm-start td{border-top-color:#31445e!important}html[data-theme=dark] .storage-disk-detail-table tr.storage-vm-cont td{background:#101d30}
+@media(max-width:1100px){.storage-search-bar{grid-template-columns:1fr 1fr}}
 </style>
 '''
 
@@ -25036,3 +25162,187 @@ def purge_vm_data(conn, node, vm_uuid, refresh_snapshots=True):
         """,(affected,))
     deleted["affected_nodes"]=len(affected_nodes)
     return deleted
+
+# ---------------------------------------------------------------------------
+# v48.13.4 admin inventory status filters
+# ---------------------------------------------------------------------------
+
+V48134_VERSION = "48.13.4"
+V48134_ADMIN_STATUS = {"all", "active", "hidden", "stale"}
+
+
+def _v48134_clean_admin_status(value):
+    value = str(value or "all").strip().lower()
+    return value if value in V48134_ADMIN_STATUS else "all"
+
+
+def _v48134_status_sql(alias, last_col, status):
+    cutoff = now_ts() - VM_STALE_SECONDS
+    hidden = f"(COALESCE({alias}.status,'active')='hidden' OR {alias}.deleted_at IS NOT NULL)"
+    if status == "hidden":
+        return hidden, []
+    if status == "active":
+        return f"NOT {hidden} AND COALESCE({alias}.{last_col},0)>=?", [cutoff]
+    if status == "stale":
+        return f"NOT {hidden} AND COALESCE({alias}.{last_col},0)<?", [cutoff]
+    return "1=1", []
+
+
+def _v48134_admin_pager(section, q, status, page_no, max_page, per_page):
+    if max_page <= 1:
+        return ""
+    common = {"section": section, "q": q or None, "status": status, "per_page": per_page}
+    prev_url = url_for("admin_page", **common, page=max(1, page_no - 1))
+    next_url = url_for("admin_page", **common, page=min(max_page, page_no + 1))
+    prev_cls = "disabled" if page_no <= 1 else ""
+    next_cls = "disabled" if page_no >= max_page else ""
+    return f'<div class="pagination"><a class="btn {prev_cls}" href="{escape(prev_url,quote=True)}">← Previous</a><span>Page <b>{page_no}</b> / <b>{max_page}</b></span><a class="btn {next_cls}" href="{escape(next_url,quote=True)}">Next →</a></div>'
+
+
+def _v48134_admin_nodes(q, status, page_no, per_page):
+    status = _v48134_clean_admin_status(status)
+    status_sql, params = _v48134_status_sql("ni", "last_push", status)
+    where = [status_sql]
+    if q:
+        p = like_pattern(q)
+        where.append("""(ni.node LIKE ? OR EXISTS (SELECT 1 FROM node_bridge_addresses_latest b WHERE b.node=ni.node AND (COALESCE(b.primary_ipv4,'') LIKE ? OR COALESCE(b.ipv4_json,'[]') LIKE ?)) OR EXISTS (SELECT 1 FROM vm_inventory v WHERE v.node=ni.node AND (v.vm_uuid LIKE ? OR COALESCE(v.last_iface,'') LIKE ? OR COALESCE(v.last_bridge,'') LIKE ?)))""")
+        params.extend([p, p, p, p, p, p])
+    where_sql = "WHERE " + " AND ".join(where)
+    conn = db()
+    try:
+        total = safe_int(conn.execute(f"SELECT COUNT(*) FROM node_inventory ni {where_sql}", params).fetchone()[0], 0)
+        max_page = max(1, math.ceil(total / per_page))
+        page_no = max(1, min(page_no, max_page))
+        rows = conn.execute(f"""
+          WITH bridge_ip AS (
+            SELECT node,MAX(CASE WHEN LOWER(role)='public' THEN primary_ipv4 ELSE '' END) public_ipv4,
+                        MAX(CASE WHEN LOWER(role)='private' THEN primary_ipv4 ELSE '' END) private_ipv4
+            FROM node_bridge_addresses_latest GROUP BY node
+          ), vm_count AS (
+            SELECT node,COUNT(DISTINCT vm_uuid) vm_count FROM vm_inventory
+            WHERE COALESCE(status,'active')!='hidden' AND deleted_at IS NULL GROUP BY node
+          )
+          SELECT ni.node,ni.status,ni.last_push,ni.deleted_at,COALESCE(vc.vm_count,0),COALESCE(b.public_ipv4,''),COALESCE(b.private_ipv4,'')
+          FROM node_inventory ni LEFT JOIN bridge_ip b ON b.node=ni.node LEFT JOIN vm_count vc ON vc.node=ni.node
+          {where_sql}
+          ORDER BY CASE WHEN COALESCE(ni.status,'active')='hidden' OR ni.deleted_at IS NOT NULL THEN 1 ELSE 0 END,
+                   ni.node COLLATE NOCASE
+          LIMIT ? OFFSET ?
+        """, params + [per_page, (page_no - 1) * per_page]).fetchall()
+        return rows, total, page_no, max_page
+    finally:
+        conn.close()
+
+
+def _v48134_admin_vms(q, status, page_no, per_page):
+    status = _v48134_clean_admin_status(status)
+    status_sql, params = _v48134_status_sql("vi", "last_seen", status)
+    where = [status_sql]
+    if q:
+        p = like_pattern(q)
+        where.append("""(vi.node LIKE ? OR vi.vm_uuid LIKE ? OR COALESCE(vi.last_iface,'') LIKE ? OR COALESCE(vi.last_bridge,'') LIKE ? OR EXISTS (SELECT 1 FROM node_bridge_addresses_latest b WHERE b.node=vi.node AND (COALESCE(b.primary_ipv4,'') LIKE ? OR COALESCE(b.ipv4_json,'[]') LIKE ?)))""")
+        params.extend([p, p, p, p, p, p])
+    where_sql = "WHERE " + " AND ".join(where)
+    conn = db()
+    try:
+        total = safe_int(conn.execute(f"SELECT COUNT(*) FROM vm_inventory vi {where_sql}", params).fetchone()[0], 0)
+        max_page = max(1, math.ceil(total / per_page))
+        page_no = max(1, min(page_no, max_page))
+        rows = conn.execute(f"""
+          WITH bridge_ip AS (
+            SELECT node,MAX(CASE WHEN LOWER(role)='public' THEN primary_ipv4 ELSE '' END) public_ipv4,
+                        MAX(CASE WHEN LOWER(role)='private' THEN primary_ipv4 ELSE '' END) private_ipv4
+            FROM node_bridge_addresses_latest GROUP BY node
+          )
+          SELECT vi.node,vi.vm_uuid,vi.status,vi.last_seen,vi.last_bridge,vi.last_iface,vi.deleted_at,COALESCE(b.public_ipv4,''),COALESCE(b.private_ipv4,'')
+          FROM vm_inventory vi LEFT JOIN bridge_ip b ON b.node=vi.node
+          {where_sql}
+          ORDER BY CASE WHEN COALESCE(vi.status,'active')='hidden' OR vi.deleted_at IS NOT NULL THEN 1 ELSE 0 END,
+                   vi.node COLLATE NOCASE,vi.last_seen DESC
+          LIMIT ? OFFSET ?
+        """, params + [per_page, (page_no - 1) * per_page]).fetchall()
+        return rows, total, page_no, max_page
+    finally:
+        conn.close()
+
+
+def _v48134_status_options(selected):
+    labels = (("all", "All status"), ("active", "Active"), ("hidden", "Hidden"), ("stale", "Stale"))
+    return "".join(f'<option value="{key}"{" selected" if selected == key else ""}>{label}</option>' for key, label in labels)
+
+
+def _v48134_admin_nodes_section(q, status, page_no, per_page):
+    rows, total, page_no, max_page = _v48134_admin_nodes(q, status, page_no, per_page)
+    body = ""
+    cutoff = now_ts() - VM_STALE_SECONDS
+    for node, row_status, last_push, deleted_at, vm_count, pub, priv in rows:
+        is_hidden = row_status == "hidden" or bool(deleted_at)
+        is_stale = not is_hidden and safe_int(last_push, 0) < cutoff
+        display_status = "hidden" if is_hidden else ("stale" if is_stale else "active")
+        forms = admin_form(url_for('admin_delete_node'), 'Hide', {'node': node, 'mode': 'soft'}, danger=True, confirm='Hide node from dashboard? Raw usage is kept.')
+        forms += admin_form(url_for('admin_restore_node'), 'Restore', {'node': node}, danger=False, confirm='Restore node to dashboard?')
+        forms += admin_form(url_for('admin_purge_node_vms'), 'Purge VMs', {'node': node}, danger=True, confirm='Purge every VM and VM history under this node?')
+        forms += admin_form(url_for('admin_delete_node'), 'Purge node', {'node': node, 'mode': 'purge'}, danger=True, confirm='Permanently purge this node and all monitoring data?')
+        body += f'''<tr class="{'stale-row' if is_hidden or is_stale else ''}"><td><input class="node-select" form="bulk-nodes-form" type="checkbox" name="nodes" value="{escape(node,quote=True)}"></td><td><b>{escape(node)}</b><small class="row-sub">{escape(display_status)}</small></td><td class="mono">{escape(compact_ipv4(pub) or '-')}</td><td class="mono">{escape(compact_ipv4(priv) or '-')}</td><td class="num"><b>{safe_int(vm_count,0)}</b></td><td>{fmt_full(last_push)}</td><td>{_v490_action_menu(forms)}</td></tr>'''
+    if not body:
+        body = '<tr><td colspan="7" class="empty">No nodes match this filter</td></tr>'
+    return f'''
+    <div class="card"><div class="section-head"><div><h3>Node management</h3><p>{total:,} matching node(s). Filter active, hidden or stale inventory without loading everything.</p></div></div>
+    <form class="search" method="get"><input type="hidden" name="section" value="nodes"><input name="q" value="{escape(q,quote=True)}" placeholder="Search node, IP, VM, bridge or interface"><select name="status">{_v48134_status_options(status)}</select><select name="per_page"><option value="100" {'selected' if per_page==100 else ''}>100 rows</option><option value="200" {'selected' if per_page==200 else ''}>200 rows</option><option value="500" {'selected' if per_page==500 else ''}>500 rows</option></select><button>Filter</button><a class="clear" href="{url_for('admin_page',section='nodes')}">Reset</a></form>
+    <form id="bulk-nodes-form" method="post" action="{url_for('admin_bulk_nodes')}" onsubmit="return confirm('Apply selected node action?')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><div class="bulk-bar compact-bulk"><label><input type="checkbox" onclick="document.querySelectorAll('.node-select').forEach(cb=>cb.checked=this.checked)"> Select page</label><select name="action"><option value="hide">Hide</option><option value="restore">Restore</option><option value="purge_vms">Purge all VMs</option><option value="purge">Purge node</option></select><button class="btn-danger">Apply</button></div></form>
+    <div class="table-wrap"><table class="admin-clean-table"><thead><tr><th></th><th>NODE / STATUS</th><th>PUBLIC IP</th><th>PRIVATE IP</th><th>VM</th><th>LAST PUSH</th><th>ACTION</th></tr></thead><tbody>{body}</tbody></table></div>{_v48134_admin_pager('nodes',q,status,page_no,max_page,per_page)}</div>'''
+
+
+def _v48134_admin_vms_section(q, status, page_no, per_page):
+    rows, total, page_no, max_page = _v48134_admin_vms(q, status, page_no, per_page)
+    body = ""
+    cutoff = now_ts() - VM_STALE_SECONDS
+    for node, vm_uuid, row_status, last_seen, bridge, iface, deleted_at, pub, priv in rows:
+        is_hidden = row_status == "hidden" or bool(deleted_at)
+        is_stale = not is_hidden and safe_int(last_seen, 0) < cutoff
+        display_status = "hidden" if is_hidden else ("stale" if is_stale else "active")
+        forms = admin_form(url_for('admin_delete_vm'), 'Hide', {'node': node, 'vm_uuid': vm_uuid, 'mode': 'soft'}, danger=True, confirm='Hide VM from dashboard? Raw usage is kept.')
+        forms += admin_form(url_for('admin_restore_vm'), 'Restore', {'node': node, 'vm_uuid': vm_uuid}, danger=False, confirm='Restore VM to dashboard?')
+        forms += admin_form(url_for('admin_delete_vm'), 'Purge VM', {'node': node, 'vm_uuid': vm_uuid, 'mode': 'purge'}, danger=True, confirm='Permanently purge only this UUID from every VM-scoped table?')
+        value = escape(f"{node}\t{vm_uuid}", quote=True)
+        body += f'''<tr class="{'stale-row' if is_hidden or is_stale else ''}"><td><input class="vm-select" form="bulk-vms-form" type="checkbox" name="vms" value="{value}"></td><td><b>{escape(node)}</b><small class="row-sub">{escape(compact_ipv4(pub) or '-')}</small></td><td class="mono"><span class="uuid-cell">{escape(vm_uuid)}<button type="button" class="copy-btn" data-copy="{escape(vm_uuid,quote=True)}">⧉</button></span></td><td><b>{escape(display_status)}</b><small class="row-sub">{fmt_push(last_seen)}</small></td><td>{escape(bridge or '-')}<small class="row-sub">{escape(iface or '-')}</small></td><td>{_v490_action_menu(forms)}</td></tr>'''
+    if not body:
+        body = '<tr><td colspan="6" class="empty">No VMs match this filter</td></tr>'
+    return f'''
+    <div class="card"><div class="section-head"><div><h3>VM management</h3><p>{total:,} matching VM(s). Status filter separates active, hidden and stale inventory.</p></div></div>
+    <form class="search" method="get"><input type="hidden" name="section" value="vms"><input name="q" value="{escape(q,quote=True)}" placeholder="Search node, IP, VM UUID, bridge or interface"><select name="status">{_v48134_status_options(status)}</select><select name="per_page"><option value="100" {'selected' if per_page==100 else ''}>100 rows</option><option value="200" {'selected' if per_page==200 else ''}>200 rows</option><option value="500" {'selected' if per_page==500 else ''}>500 rows</option></select><button>Filter</button><a class="clear" href="{url_for('admin_page',section='vms')}">Reset</a></form>
+    <form id="bulk-vms-form" method="post" action="{url_for('admin_bulk_vms')}" onsubmit="return confirm('Apply selected VM action?')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><div class="bulk-bar compact-bulk"><label><input type="checkbox" onclick="document.querySelectorAll('.vm-select').forEach(cb=>cb.checked=this.checked)"> Select page</label><select name="action"><option value="hide">Hide</option><option value="restore">Restore</option><option value="purge">Purge</option></select><button class="btn-danger">Apply</button></div></form>
+    <div class="table-wrap"><table class="admin-clean-table"><thead><tr><th></th><th>NODE / IP</th><th>VM UUID</th><th>STATUS / SEEN</th><th>BRIDGE / IFACE</th><th>ACTION</th></tr></thead><tbody>{body}</tbody></table></div>{_v48134_admin_pager('vms',q,status,page_no,max_page,per_page)}</div>'''
+
+
+def admin_page_v48134():
+    deny = require_admin()
+    if deny:
+        return deny
+    section = (request.args.get('section') or 'overview').strip().lower()
+    if section not in {'overview', 'nodes', 'vms', 'maintenance'}:
+        section = 'overview'
+    q = (request.args.get('q') or '').strip()
+    status = _v48134_clean_admin_status(request.args.get('status'))
+    page_no = max(1, safe_int(request.args.get('page'), 1))
+    per_page = max(25, min(500, safe_int(request.args.get('per_page'), 200)))
+    dbmsg = (request.args.get('dbmsg') or '').strip()[:700]
+    dberr = (request.args.get('dberr') or '').strip()[:700]
+    stats = _v490_admin_stats()
+    if section == 'overview':
+        section_html = _v490_admin_overview(stats)
+    elif section == 'nodes':
+        section_html = _v48134_admin_nodes_section(q, status, page_no, per_page)
+    elif section == 'vms':
+        section_html = _v48134_admin_vms_section(q, status, page_no, per_page)
+    else:
+        section_html = _v490_live_cache_card() + database_maintenance_card(dbmsg, dberr)
+    content = f'''
+    <div class="card admin-hero"><div><span class="eyebrow">CONTROL CENTER</span><h2>Administration</h2><p>Inventory, policy, users and maintenance are separated into focused sections.</p></div><div class="admin-user-actions"><a class="btn" href="{url_for('index')}">Dashboard</a><a class="btn" href="{url_for('admin_logout')}">Logout</a></div></div>
+    {_v490_admin_nav(section)}
+    {section_html}
+    '''
+    return page('Admin', content)
+
+
+app.view_functions['admin_page'] = admin_page_v48134

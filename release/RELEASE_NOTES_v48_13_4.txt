@@ -1,0 +1,69 @@
+BW Monitor 48.13.4-prod-r1-storage-precision
+================================================
+
+Scope
+-----
+This release keeps the v48.12.9-r4 operational workflow and finishes the disk
+integration without replacing Dashboard, VM Abuse, Node Health, charts or the
+existing CPU/RAM/network logic.
+
+Critical cleanup fix
+--------------------
+- Fixed an import-time abuse-engine migration that could clear Current Abuse for
+  every VM when a maintenance worker started to purge one UUID.
+- The final cycles-v3-ram engine is now recognized as current and is preserved.
+- Purge VM deletes only the selected UUID from every VM-scoped current/history
+  table, including all node copies of that UUID.
+- Unrelated Current Abuse and Abuse Events remain visible immediately.
+- Node storage metrics remain intact when one VM is purged.
+
+Node filesystem and storage fixes
+---------------------------------
+- Recursively parses findmnt JSON so nested mounts such as /home are not lost.
+- Uses MAJ:MIN through /sys/dev/block for LVM, device-mapper, mdraid, partitions,
+  multipath-style aliases and long /dev/mapper names.
+- Keeps /, /home, /home2 and /home3 as distinct filesystems when they are
+  distinct mounts.
+- Overlays latest Read, Write, Read IOPS, Write IOPS and Util onto every retained
+  Node Filesystems row, not only the root filesystem.
+
+Top VM
+------
+- Adds one compact total Host Allocated / Assigned disk meter between RAM and
+  Disk R/s.
+- Totals only customer disks and excludes cloud-drive/CD-ROM/auxiliary blocks.
+- Supports Allocated, Assigned, Allocated %, and disk-count sorting.
+- Keeps one VM per row and tightens column widths while preserving the long UUID.
+
+VM detail
+---------
+- Adds one capacity card per customer disk inside Overview.
+- Adds Virtual Disk I/O between Overview and charts.
+- Each disk has its own panel with mount, device, source, filesystem, physical
+  size, allocated/assigned meter, Read, Write, Read IOPS and Write IOPS.
+
+Storage I/O
+-----------
+- VM Disks now renders one real customer disk per row instead of combining vda
+  and vdb inside one cell.
+- Node name/IP and UUID/copy remain visible on every disk row.
+- Search covers node, IP, UUID, target, source path, mount and device.
+- All capacity and I/O columns remain sortable and paginated.
+- Storage Backends is renamed Storage Node.
+
+Admin
+-----
+- Node and VM inventory sections now filter All, Active, Hidden and Stale.
+- Existing hide, restore, purge and bulk actions remain available.
+
+Deployment
+----------
+Monitor and Agent must both be updated. The /home and per-mount I/O fixes are in
+Agent v11, while the UI, cleanup and migration fixes are in the Monitor.
+
+Validation
+----------
+- All legacy v48.10.0 through v48.12.9-r4 regression suites pass.
+- v48.13.4 storage-precision regression passes.
+- Python syntax, shell syntax, installer-flow checks, YAML validation and
+  checksum verification pass in the release audit.

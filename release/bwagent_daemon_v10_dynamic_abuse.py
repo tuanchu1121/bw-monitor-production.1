@@ -407,7 +407,7 @@ def parse_mount_inventory(filesystems):
         mounts.append({
             "mount": mount,
             "device": device,
-            "block": device_to_block_name(device) or "",
+            "block": device_to_block_name(device, fs.get("maj_min")) or "",
             "fstype": str(fs.get("fstype") or ""),
             "size": safe_int(fs.get("size"), 0),
             "used": safe_int(fs.get("used"), 0),
@@ -598,60 +598,74 @@ def parse_uptime_seconds():
         return 0
 
 
-def collect_filesystems():
-    """Collect every real mounted filesystem without losing long /dev/mapper rows.
+def _walk_findmnt_rows(items):
+    """Yield every findmnt JSON item, including nested child mounts.
 
-    GNU df can wrap long device names on some distributions and older output
-    parsers then silently lose a separate /home mount.  Prefer findmnt JSON,
-    which preserves /, /home, /home2 and other independent mounts exactly.
-    Fall back to POSIX df when findmnt is unavailable.
+    Some util-linux versions return a tree even when JSON is requested.  A
+    shallow loop sees only `/` and silently loses a separate `/home` mount.
+    """
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        yield item
+        yield from _walk_findmnt_rows(item.get("children") or [])
+
+
+def collect_filesystems():
+    """Collect every real mounted filesystem, including nested `/home` mounts.
+
+    Prefer a flat findmnt JSON list and retain MAJ:MIN so device-mapper, LVM,
+    mdraid, partitions and long `/dev/mapper/*` names can be resolved back to
+    the correct kernel block counter.  Fall back to recursive JSON and then
+    POSIX df when needed.
     """
     rows = []
     seen_mounts = set()
+    ignored_fs = {
+        "tmpfs", "devtmpfs", "squashfs", "overlay", "tracefs", "debugfs",
+        "securityfs", "pstore", "efivarfs", "cgroup", "cgroup2", "proc", "sysfs",
+    }
 
-    try:
-        raw = run([
-            "findmnt", "--json", "--bytes", "--real",
-            "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET",
-        ], timeout=20)
-        payload = json.loads(raw or "{}")
-        for item in payload.get("filesystems") or []:
-            if not isinstance(item, dict):
-                continue
-            mount = str(item.get("target") or "").strip()
-            if not mount or mount in seen_mounts:
-                continue
-            if mount.startswith(("/run", "/sys", "/proc", "/dev")):
-                continue
-            try:
-                if not Path(mount).is_dir():
+    for findmnt_args in (
+        ["findmnt", "--list", "--json", "--bytes", "--real", "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET,MAJ:MIN"],
+        ["findmnt", "--json", "--bytes", "--real", "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET,MAJ:MIN"],
+    ):
+        try:
+            raw = run(findmnt_args, timeout=20)
+            payload = json.loads(raw or "{}")
+            rows = []
+            seen_mounts = set()
+            for item in _walk_findmnt_rows(payload.get("filesystems") or []):
+                mount = str(item.get("target") or "").strip()
+                if not mount or mount in seen_mounts:
                     continue
-            except Exception:
-                pass
-            source = str(item.get("source") or "").strip()
-            fstype = str(item.get("fstype") or "").strip()
-            if fstype in {"tmpfs", "devtmpfs", "squashfs", "overlay", "tracefs", "debugfs", "securityfs", "pstore", "efivarfs", "cgroup", "cgroup2", "proc", "sysfs"}:
-                continue
-            size = safe_int(item.get("size"), 0)
-            used = safe_int(item.get("used"), 0)
-            avail = safe_int(item.get("avail"), 0)
-            use_percent = safe_float(str(item.get("use%") or item.get("use_percent") or "0").strip().rstrip("%"), 0.0)
-            rows.append({
-                "device": source,
-                "fstype": fstype,
-                "mount": mount,
-                "size": size,
-                "used": used,
-                "avail": avail,
-                "use_percent": use_percent,
-            })
-            seen_mounts.add(mount)
-        if rows:
-            rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
-            return rows
-    except Exception:
-        rows = []
-        seen_mounts = set()
+                if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+                    continue
+                try:
+                    if not Path(mount).is_dir():
+                        continue
+                except Exception:
+                    pass
+                source = str(item.get("source") or "").strip()
+                fstype = str(item.get("fstype") or "").strip()
+                if fstype in ignored_fs:
+                    continue
+                rows.append({
+                    "device": source,
+                    "maj_min": str(item.get("maj:min") or item.get("maj_min") or "").strip(),
+                    "fstype": fstype,
+                    "mount": mount,
+                    "size": safe_int(item.get("size"), 0),
+                    "used": safe_int(item.get("used"), 0),
+                    "avail": safe_int(item.get("avail"), 0),
+                    "use_percent": safe_float(str(item.get("use%") or item.get("use_percent") or "0").strip().rstrip("%"), 0.0),
+                })
+                seen_mounts.add(mount)
+            if rows:
+                rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
+                return rows
+        except Exception:
+            continue
 
     try:
         out = run([
@@ -659,15 +673,17 @@ def collect_filesystems():
             "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay",
         ], timeout=20)
     except Exception:
-        return rows
+        return []
 
+    rows = []
+    seen_mounts = set()
     for line in out.splitlines()[1:]:
-        p = line.split()
-        if len(p) < 7:
+        parts = line.split()
+        if len(parts) < 7:
             continue
-        device, fstype = p[0], p[1]
-        size, used, avail = safe_int(p[2]), safe_int(p[3]), safe_int(p[4])
-        pct, mount = p[5], p[6]
+        device, fstype = parts[0], parts[1]
+        size, used, avail = safe_int(parts[2]), safe_int(parts[3]), safe_int(parts[4])
+        pct, mount = parts[5], parts[6]
         if mount in seen_mounts or mount.startswith(("/run", "/sys", "/proc", "/dev")):
             continue
         try:
@@ -675,8 +691,15 @@ def collect_filesystems():
                 continue
         except Exception:
             pass
+        maj_min = ""
+        try:
+            st = os.stat(mount)
+            maj_min = "%s:%s" % (os.major(st.st_dev), os.minor(st.st_dev))
+        except Exception:
+            pass
         rows.append({
             "device": device,
+            "maj_min": maj_min,
             "fstype": fstype,
             "mount": mount,
             "size": size,
@@ -689,19 +712,38 @@ def collect_filesystems():
     return rows
 
 
-def device_to_block_name(device):
-    if not device or not device.startswith("/dev/"):
+def device_to_block_name(device, maj_min=""):
+    """Resolve a mounted source to the kernel block name used by sysfs.
+
+    MAJ:MIN is authoritative for LVM/device-mapper and avoids relying on a
+    possibly long, aliased or bracket-suffixed source string.
+    """
+    maj_min = str(maj_min or "").strip()
+    if maj_min:
+        try:
+            link = Path("/sys/dev/block") / maj_min
+            if link.exists():
+                name = os.path.basename(os.path.realpath(str(link)))
+                if (Path("/sys/class/block") / name / "stat").exists():
+                    return name
+        except Exception:
+            pass
+
+    device = str(device or "").strip()
+    if not device:
         return None
-    try:
-        real = os.path.realpath(device)
-        name = os.path.basename(real)
-        if (Path("/sys/class/block") / name / "stat").exists():
-            return name
-    except Exception:
-        pass
-    name = os.path.basename(device)
-    if (Path("/sys/class/block") / name / "stat").exists():
-        return name
+    # findmnt may render subvolume/root suffixes as /dev/mapper/vg-lv[/path].
+    if "[" in device and device.endswith("]"):
+        device = device.split("[", 1)[0]
+    if not device.startswith("/dev/"):
+        return None
+    for candidate in (os.path.realpath(device), device):
+        try:
+            name = os.path.basename(candidate)
+            if (Path("/sys/class/block") / name / "stat").exists():
+                return name
+        except Exception:
+            pass
     return None
 
 
@@ -739,7 +781,7 @@ def collect_node_host(state, now_ts, interval):
     block_samples = {}
     counted_blocks = set()
     for fs in filesystems:
-        block = device_to_block_name(fs.get("device")) or ""
+        block = device_to_block_name(fs.get("device"), fs.get("maj_min")) or ""
         rd = wd = rr = wr = io_ms = weighted_ms = 0
         if block:
             if block not in block_samples:
