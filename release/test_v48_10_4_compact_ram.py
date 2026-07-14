@@ -206,7 +206,7 @@ def main() -> int:
             # v48.13.1 keeps one compact RAM data column, but the final Top VM
             # renderer no longer relies on the legacy ram-compact-sort-head /
             # ram-sort-menu CSS markers. Validate the rendered contract instead.
-            check(top_html.count(">RAM</a>") == 1, "Top VM should keep one RAM column")
+            check(sum(top_html.count(f">RAM{suffix}</a>") for suffix in ("", " ↓", " ↑")) == 1, "Top VM should keep one RAM column")
             check(top_html.count("DISK CAPACITY") == 1, "Top VM should keep one Disk Capacity column")
             for label in ("ALLOC", "ASSIGNED", "ALLOC %", "COUNT", "Host Allocated / Assigned"):
                 check(label in top_html, f"Top VM disk capacity UI is missing {label}")

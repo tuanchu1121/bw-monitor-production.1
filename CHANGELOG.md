@@ -56,3 +56,7 @@
 - Full per-disk details on VM detail pages.
 - Disk-aware Current Abuse context linked by node + VM UUID.
 - VM/node purge now removes VM-scoped disk and abuse rows.
+
+## v48.13.1-prod-r4
+- Fixed a false failure in `test_v48_10_4_compact_ram.py` when the Top VM RAM column is the active sort and renders as `RAM ↓` or `RAM ↑`.
+- Kept validation that exactly one RAM column is rendered.

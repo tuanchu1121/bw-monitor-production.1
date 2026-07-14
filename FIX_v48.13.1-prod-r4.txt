@@ -1,0 +1,6 @@
+BW Monitor v48.13.1-prod-r4
+
+Regression test compatibility fix:
+- Top VM RAM header test now accepts the active sort arrow (RAM ↓ / RAM ↑).
+- The previous literal check only accepted exactly >RAM</a>, causing a false failure when RAM was the active sort column.
+- No production metric, database, or UI behavior was removed.
