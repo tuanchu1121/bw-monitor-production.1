@@ -1,8 +1,8 @@
-# BW Monitor v48.12.9-r4 Production
+# BW Monitor v48.13.3 Storage Integrated Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor v48.12.9-r4-prod-r2**. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor v48.13.3-prod-r1-storage-integrated**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -338,7 +338,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.12.9-r4`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.3-prod-r1`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
@@ -367,11 +367,14 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - Review disk growth and retention health regularly.
 - Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
 
-### Storage I/O extension (48.13.2)
-This release keeps the original Dashboard, Top VM, VM Abuse and Node Health UI unchanged. The new **Storage I/O** tab provides per-VM-disk and per-node-storage current metrics with lookback filtering, search, sorting and pagination.
+### Storage integration (48.13.3)
 
+This release preserves the original v48.12.9-r4 operational pages and integrates disk visibility into the existing workflow:
 
-### 48.13.2-prod-r2 disk-only fixes
+- **Top VM** keeps one VM per row and adds a compact total disk meter between RAM and Disk R/s. The meter shows Host Allocated / Assigned across customer disks and can sort by Allocated, Assigned, Allocated %, or disk count.
+- **VM Detail** shows per-disk allocated/assigned capacity in Overview and a Virtual Disk I/O section before the charts with source path, mount, device, Read/Write and IOPS.
+- **Storage I/O → VM Disks** has a prominent search field, node/IP and UUID copy controls, and groups all customer disks under one UUID.
+- **Storage I/O → Storage Node** reports every discovered storage mount, including separate `/home`, `/home2`, LVM and device-mapper mounts, with capacity and physical I/O metrics.
+- **Exact UUID purge** removes the selected UUID from current caches, retained VM history, Current Abuse, Abuse Events, Top VM, Dashboard and disk-current data without clearing unrelated VMs.
 
-- Node Filesystems per-mount I/O: Read, Write, Read IOPS, Write IOPS and Util.
-- Purging a VM clears all node+UUID live caches and Abuse history, so no 5m/search ghost remains after the purge job completes.
+Agent v11 uses one bulk `virsh domstats --list-active --vcpu --balloon --block` call for per-VM disk counters and `findmnt --real` for robust host filesystem discovery. Reinstall/update the Agent after deploying this release so separate mounts such as a 200 TB `/home` are reported correctly.

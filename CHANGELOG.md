@@ -1,5 +1,14 @@
 # Changelog
 
+## 48.13.3-prod-r1-storage-integrated
+
+- Fixed exact UUID purge so deleting one VM removes only that VM from Current Abuse, Abuse Events, Top VM, Dashboard, retained 5-minute/history data and disk current data. Unrelated VMs remain visible immediately.
+- Added a compact total disk-capacity meter to Top VM between RAM and Disk R/s. It shows Host Allocated / Assigned across all customer disks and supports Allocated, Assigned, Allocated %, and Disk Count sorting.
+- Added per-disk capacity cards inside VM Overview and a Virtual Disk I/O section between Overview and charts with source, storage, Read/Write, IOPS and current capacity.
+- Reworked Storage I/O with a large search field, node/IP display, copy controls, one grouped row per UUID, and a renamed Storage Node view.
+- Improved filesystem discovery with real `findmnt` data so separate large `/home`, `/home2`, LVM, device-mapper and hardware-RAID-backed mounts remain distinct from the OS `/` filesystem.
+- Preserved the original v48.12.9-r4 Dashboard, VM Abuse, Node Health, Admin, CPU, RAM, network and chart behavior outside the requested disk integration.
+
 ## 48.13.2-prod-r2-disk-only
 
 - Added per-mount Read/Write, Read/Write IOPS and Util to the existing Node Filesystems table.

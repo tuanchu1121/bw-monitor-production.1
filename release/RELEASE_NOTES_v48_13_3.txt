@@ -1,0 +1,47 @@
+BW Monitor 48.13.3-prod-r1-storage-integrated
+
+Scope
+-----
+Preserve the original v48.12.9-r4 operational behavior and integrate disk capacity, per-disk I/O, storage-node visibility and exact UUID cleanup into the existing workflow.
+
+Top VM
+------
+- One VM remains one row.
+- Added total Host Allocated / Assigned disk capacity between RAM and Disk R/s.
+- Added compact capacity bar and Allocated, Assigned, Allocated %, and Disk Count sorting.
+- Kept UUID width readable while reducing rank, IFACES and numeric-column widths for a denser aligned table.
+
+VM Detail
+---------
+- Overview includes one allocated/assigned card per customer disk.
+- Virtual Disk I/O is inserted between Overview and charts.
+- Each disk shows target, source path, mount, device, filesystem, role, allocated, assigned, physical, Read/Write, Read IOPS, Write IOPS and last-seen time.
+
+Storage I/O
+-----------
+- Added a large search control similar to Dashboard/Top VM.
+- Renamed Storage Backends to Storage Node.
+- Node rows show node IP and copy control.
+- VM rows show UUID copy control.
+- VM Disks groups every customer disk under one node + UUID row while preserving sortable total metrics.
+- Storage Node shows all reported mounts, not only mounts that currently have a matched VM disk.
+
+Filesystem discovery
+--------------------
+- Agent v11 prefers `findmnt --json --bytes --real` and falls back to `df`.
+- Long device-mapper/LVM sources are no longer dropped.
+- Separate large `/home`, `/home2`, RAID, LVM and hardware-controller logical volumes remain distinct from `/`.
+- Per-mount physical Read/Write, IOPS and Util are collected once per block device without alias double counting.
+
+Exact UUID purge
+----------------
+- Deleting one UUID removes only that UUID from current VM/interface/disk caches, VM history, bandwidth history, inventory/presence, Current Abuse, raw Abuse Events and grouped Abuse Incidents.
+- All historical copies of that UUID across previous nodes are removed to prevent 5-minute Dashboard/Top VM search ghosts.
+- Unrelated VMs and their Current Abuse/Abuse Events remain visible immediately.
+- Node host/filesystem/storage metrics are preserved when only a VM is purged.
+
+Validation
+----------
+- Full legacy regression suite passed.
+- v48.13.3 storage integration regression passed.
+- Python syntax, shell syntax, installer flow and checksum validation passed.

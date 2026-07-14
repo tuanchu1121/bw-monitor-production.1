@@ -53,10 +53,10 @@ log 'Verify production installer flow'
 ./tools/test-installer-flow.sh
 
 log 'Verify release identity and deployment links'
-grep -q '^48.13.2-prod-r1-disk-only$' VERSION || fail 'Root VERSION mismatch.'
-grep -q '^48.13.2-prod-r1-disk-only$' release/VERSION || fail 'Release VERSION mismatch.'
+grep -q '^48.13.3-prod-r1-storage-integrated$' VERSION || fail 'Root VERSION mismatch.'
+grep -q '^48.13.3-prod-r1-storage-integrated$' release/VERSION || fail 'Release VERSION mismatch.'
 grep -q 'V48129_BUILD = "r4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Original application r4 marker missing.'
-grep -q 'def storage_io_page' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Storage I/O extension missing.'
+grep -q 'V48133_VERSION = "48.13.3"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.3 storage integration missing.'
 grep -q 'AGENT_VERSION = 11' release/bwagent_daemon_v10_dynamic_abuse.py || fail 'Agent v11 marker missing.'
 grep -q 'install_bw_monitor_v48_12_9.sh' deploy/monitor/install-monitor.sh || fail 'Production installer is not linked to v48.12.9.'
 grep -q 'db-check.sh' deploy/monitor/install-monitor.sh || fail 'Database checker is not installed.'

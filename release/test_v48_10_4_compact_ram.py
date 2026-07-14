@@ -100,7 +100,7 @@ def main() -> int:
         check(getattr(appmod, "V48103_VERSION", "") == "48.10.3", "missing v48.10.3 guest RAM base marker")
         check(getattr(appmod, "V48104_VERSION", "") == "48.10.4", "wrong v48.10.4 marker")
         check(appmod.app.view_functions["vm_abuse_page"].__name__ in {"vm_abuse_page_v48103", "vm_abuse_page_v48126", "vm_abuse_page_v48128", "vm_abuse_page_v48129"}, "guest-aware abuse/intelligence view is not active")
-        check(appmod.app.view_functions["vm_page"].__name__ == "vm_page_v48103", "guest-aware VM detail view is not active")
+        check(appmod.app.view_functions["vm_page"].__name__ in {"vm_page_v48103", "vm_page_v48133"}, "guest-aware VM detail view is not active")
 
         conn = appmod.db()
         try:

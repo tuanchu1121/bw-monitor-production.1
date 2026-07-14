@@ -17,13 +17,13 @@ The helper:
 1. runs the local release audit;
 2. checks for database/cache/secret files;
 3. validates every shell script, Python file and YAML file;
-4. runs the full v48.12.9-r4 release preflight;
+4. runs the full v48.13.3 storage-integration release preflight;
 5. regenerates and verifies checksums;
 6. initializes Git when needed;
 7. creates or updates the GitHub repository;
 8. pushes the `main` branch;
 9. builds ZIP/TAR.GZ source archives;
-10. creates or updates the `v48.12.9-r4` GitHub Release.
+10. creates or updates the `v48.13.3-prod-r1` GitHub Release.
 
 ## GitHub Web method
 

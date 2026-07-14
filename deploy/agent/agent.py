@@ -389,13 +389,20 @@ def classify_vm_disk(vm_uuid, target, source):
 
 
 def parse_mount_inventory(filesystems):
+    """Build a longest-prefix mount map for VM image paths.
+
+    Do not require SOURCE to start with /dev/.  Some production storage stacks
+    expose LVM, device-mapper, multipath, ZFS, bind or controller-specific
+    source names.  The mountpoint is still authoritative for mapping a VM image
+    path, while block-device metadata is best-effort.
+    """
     mounts = []
     for fs in filesystems or []:
         if not isinstance(fs, dict):
             continue
         mount = str(fs.get("mount") or "").rstrip("/") or "/"
         device = str(fs.get("device") or "")
-        if not mount or not device.startswith("/dev/"):
+        if not mount:
             continue
         mounts.append({
             "mount": mount,
@@ -592,9 +599,65 @@ def parse_uptime_seconds():
 
 
 def collect_filesystems():
+    """Collect every real mounted filesystem without losing long /dev/mapper rows.
+
+    GNU df can wrap long device names on some distributions and older output
+    parsers then silently lose a separate /home mount.  Prefer findmnt JSON,
+    which preserves /, /home, /home2 and other independent mounts exactly.
+    Fall back to POSIX df when findmnt is unavailable.
+    """
     rows = []
+    seen_mounts = set()
+
     try:
-        out = run(["df", "-P", "-T", "-B1", "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay"], timeout=20)
+        raw = run([
+            "findmnt", "--json", "--bytes", "--real",
+            "--output", "SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%,TARGET",
+        ], timeout=20)
+        payload = json.loads(raw or "{}")
+        for item in payload.get("filesystems") or []:
+            if not isinstance(item, dict):
+                continue
+            mount = str(item.get("target") or "").strip()
+            if not mount or mount in seen_mounts:
+                continue
+            if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+                continue
+            try:
+                if not Path(mount).is_dir():
+                    continue
+            except Exception:
+                pass
+            source = str(item.get("source") or "").strip()
+            fstype = str(item.get("fstype") or "").strip()
+            if fstype in {"tmpfs", "devtmpfs", "squashfs", "overlay", "tracefs", "debugfs", "securityfs", "pstore", "efivarfs", "cgroup", "cgroup2", "proc", "sysfs"}:
+                continue
+            size = safe_int(item.get("size"), 0)
+            used = safe_int(item.get("used"), 0)
+            avail = safe_int(item.get("avail"), 0)
+            use_percent = safe_float(str(item.get("use%") or item.get("use_percent") or "0").strip().rstrip("%"), 0.0)
+            rows.append({
+                "device": source,
+                "fstype": fstype,
+                "mount": mount,
+                "size": size,
+                "used": used,
+                "avail": avail,
+                "use_percent": use_percent,
+            })
+            seen_mounts.add(mount)
+        if rows:
+            rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
+            return rows
+    except Exception:
+        rows = []
+        seen_mounts = set()
+
+    try:
+        out = run([
+            "df", "-P", "-T", "-B1",
+            "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay",
+        ], timeout=20)
     except Exception:
         return rows
 
@@ -602,20 +665,16 @@ def collect_filesystems():
         p = line.split()
         if len(p) < 7:
             continue
-        device, fstype, size, used, avail, pct, mount = p[0], p[1], safe_int(p[2]), safe_int(p[3]), safe_int(p[4]), p[5], p[6]
-
-        # Skip pseudo/noisy paths.
-        if mount.startswith(("/run", "/sys", "/proc", "/dev")):
+        device, fstype = p[0], p[1]
+        size, used, avail = safe_int(p[2]), safe_int(p[3]), safe_int(p[4])
+        pct, mount = p[5], p[6]
+        if mount in seen_mounts or mount.startswith(("/run", "/sys", "/proc", "/dev")):
             continue
-
-        # Skip file bind mounts such as /etc/hosts that can appear in containers.
         try:
             if not Path(mount).is_dir():
                 continue
         except Exception:
             pass
-
-        use_percent = safe_float(pct.strip("%"), 0.0)
         rows.append({
             "device": device,
             "fstype": fstype,
@@ -623,8 +682,10 @@ def collect_filesystems():
             "size": size,
             "used": used,
             "avail": avail,
-            "use_percent": use_percent,
+            "use_percent": safe_float(pct.strip("%"), 0.0),
         })
+        seen_mounts.add(mount)
+    rows.sort(key=lambda x: (len(str(x.get("mount") or "")), str(x.get("mount") or "")))
     return rows
 
 
@@ -670,33 +731,57 @@ def collect_node_host(state, now_ts, interval):
     storage_devices = []
     total_read_delta = total_write_delta = 0
     total_read_ios_delta = total_write_ios_delta = 0
-    seen = set()
+
+    # Read each kernel block counter once, but keep every mount in the payload.
+    # This preserves a separate /home even when a long device-mapper name or a
+    # bind/multipath source would previously be skipped.  Node totals count each
+    # underlying block only once to avoid double-counting aliases.
+    block_samples = {}
+    counted_blocks = set()
     for fs in filesystems:
-        block = device_to_block_name(fs.get("device"))
-        if not block or block in seen:
-            continue
-        seen.add(block)
-        current = read_block_stats(block)
-        if not current:
-            continue
-        old = state.get("host:block:%s" % block, {})
-        rd = delta_counter(current.get("read_bytes"), old.get("read_bytes", current.get("read_bytes")))
-        wd = delta_counter(current.get("write_bytes"), old.get("write_bytes", current.get("write_bytes")))
-        rr = delta_counter(current.get("read_ios"), old.get("read_ios", current.get("read_ios")))
-        wr = delta_counter(current.get("write_ios"), old.get("write_ios", current.get("write_ios")))
-        io_ms = delta_counter(current.get("io_ms"), old.get("io_ms", current.get("io_ms")))
-        weighted_ms = delta_counter(current.get("weighted_io_ms"), old.get("weighted_io_ms", current.get("weighted_io_ms")))
-        state["host:block:%s" % block] = dict(current, time=now_ts)
-        total_read_delta += rd; total_write_delta += wd
-        total_read_ios_delta += rr; total_write_ios_delta += wr
+        block = device_to_block_name(fs.get("device")) or ""
+        rd = wd = rr = wr = io_ms = weighted_ms = 0
+        if block:
+            if block not in block_samples:
+                current = read_block_stats(block)
+                if current:
+                    old = state.get("host:block:%s" % block, {})
+                    rd = delta_counter(current.get("read_bytes"), old.get("read_bytes", current.get("read_bytes")))
+                    wd = delta_counter(current.get("write_bytes"), old.get("write_bytes", current.get("write_bytes")))
+                    rr = delta_counter(current.get("read_ios"), old.get("read_ios", current.get("read_ios")))
+                    wr = delta_counter(current.get("write_ios"), old.get("write_ios", current.get("write_ios")))
+                    io_ms = delta_counter(current.get("io_ms"), old.get("io_ms", current.get("io_ms")))
+                    weighted_ms = delta_counter(current.get("weighted_io_ms"), old.get("weighted_io_ms", current.get("weighted_io_ms")))
+                    state["host:block:%s" % block] = dict(current, time=now_ts)
+                block_samples[block] = (rd, wd, rr, wr, io_ms, weighted_ms)
+            else:
+                rd, wd, rr, wr, io_ms, weighted_ms = block_samples[block]
+
+            if block not in counted_blocks:
+                counted_blocks.add(block)
+                total_read_delta += rd
+                total_write_delta += wd
+                total_read_ios_delta += rr
+                total_write_ios_delta += wr
+
         storage_devices.append({
-            "mount": fs.get("mount", ""), "device": fs.get("device", ""), "block": block,
-            "raid_level": md_raid_level(block), "fstype": fs.get("fstype", ""),
-            "size": safe_int(fs.get("size"), 0), "used": safe_int(fs.get("used"), 0),
-            "avail": safe_int(fs.get("avail"), 0), "use_percent": safe_float(fs.get("use_percent"), 0.0),
-            "read_delta": rd, "write_delta": wd, "read_ios_delta": rr, "write_ios_delta": wr,
-            "read_bps": rd / float(interval), "write_bps": wd / float(interval),
-            "read_iops": rr / float(interval), "write_iops": wr / float(interval),
+            "mount": fs.get("mount", ""),
+            "device": fs.get("device", ""),
+            "block": block,
+            "raid_level": md_raid_level(block) if block else "",
+            "fstype": fs.get("fstype", ""),
+            "size": safe_int(fs.get("size"), 0),
+            "used": safe_int(fs.get("used"), 0),
+            "avail": safe_int(fs.get("avail"), 0),
+            "use_percent": safe_float(fs.get("use_percent"), 0.0),
+            "read_delta": rd,
+            "write_delta": wd,
+            "read_ios_delta": rr,
+            "write_ios_delta": wr,
+            "read_bps": rd / float(interval) if interval > 0 else 0.0,
+            "write_bps": wd / float(interval) if interval > 0 else 0.0,
+            "read_iops": rr / float(interval) if interval > 0 else 0.0,
+            "write_iops": wr / float(interval) if interval > 0 else 0.0,
             "util_percent": min(100.0, io_ms / float(interval * 10)) if interval > 0 else 0.0,
             "weighted_io_ms_delta": weighted_ms,
         })
