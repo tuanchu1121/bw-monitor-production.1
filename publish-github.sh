@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-REPO="tuanchu1121/bw-monitor-production"
+REPO="tuanchu1121/bw-monitor-production.1"
 VISIBILITY="--private"
 FORCE=0
 CREATE_RELEASE=0
@@ -11,7 +11,7 @@ usage(){ cat <<'USAGE'
 Usage: publish-github.sh [options]
 
 Options:
-  --repo OWNER/NAME   Target repository. Default: tuanchu1121/bw-monitor-production
+  --repo OWNER/NAME   Target repository. Default: tuanchu1121/bw-monitor-production.1
   --private           Create a private repository when missing (default)
   --public            Create a public repository when missing
   --release           Build archives and create/update tag/release v48.13.0

@@ -6,7 +6,7 @@ The Agent is a persistent root service on each KVM/libvirt node. It samples loca
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
 | sudo env \
   BW_AGENT_API='https://monitor.example.com/push' \
   BW_AGENT_TOKEN='PASTE_THE_MONITOR_PUSH_TOKEN' \
@@ -57,7 +57,7 @@ Remove code/config and state:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
 | sudo bash
 ```
 
@@ -65,6 +65,6 @@ Preserve state:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
 | sudo bash -s -- --keep-state
 ```

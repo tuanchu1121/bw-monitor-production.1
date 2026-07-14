@@ -1,3 +1,9 @@
+## v48.13.0-prod-r2
+
+- Corrected the default GitHub repository to `tuanchu1121/bw-monitor-production.1` in all bootstrap scripts, deployment scripts, documentation, and publishing helpers.
+- Fixed the agent package so `install-agent.sh` deploys the v48.13.0 per-disk collector from `deploy/agent/agent.py`.
+- Existing installations remain compatible and can be updated by rerunning the same installer command.
+
 ## 48.13.0-prod-r1
 
 - Per-VM-disk libvirt metrics with source, mount, backend, capacity, allocation, throughput and IOPS.
@@ -11,7 +17,7 @@
 - Fixed fresh domain installation health checks to wait for the actual HTTP endpoint instead of checking immediately after systemd becomes active.
 - Credentials are now written before service verification and remain available when a later health check fails.
 - A rerun can recover from a missing credentials file by generating a new Admin password and replacing the stored hash safely.
-- Updated all default repository URLs to `tuanchu1121/bw-monitor-production`.
+- Updated all default repository URLs to `tuanchu1121/bw-monitor-production.1`.
 
 ## 48.12.9-r4-prod-r1
 

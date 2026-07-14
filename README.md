@@ -72,7 +72,7 @@ On a minimal Debian/Ubuntu server, use this complete bootstrap command. It insta
 sudo apt-get update \
 && sudo apt-get install -y curl ca-certificates \
 && curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- \
   --public-ip 203.0.113.10 \
   --port 8080 \
@@ -105,7 +105,7 @@ Before running this command:
 sudo apt-get update \
 && sudo apt-get install -y curl ca-certificates \
 && curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- \
   --domain monitor.example.com \
   --email ops@example.com \
@@ -128,7 +128,7 @@ Use the push URL and token printed by the Monitor installer:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
 | sudo env \
   BW_AGENT_API='https://monitor.example.com/push' \
   BW_AGENT_TOKEN='PASTE_THE_MONITOR_PUSH_TOKEN' \
@@ -139,7 +139,7 @@ For an IP Monitor:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
 | sudo env \
   BW_AGENT_API='http://203.0.113.10:8080/push' \
   BW_AGENT_TOKEN='PASTE_THE_MONITOR_PUSH_TOKEN' \
@@ -161,7 +161,7 @@ bwagent-doctor
 Clone the repository on the Ansible controller:
 
 ```bash
-git clone https://github.com/tuanchu1121/bw-monitor-production.git
+git clone https://github.com/tuanchu1121/bw-monitor-production.1.git
 cd bw-monitor
 cp ansible/inventory.example.ini ansible/inventory.ini
 nano ansible/inventory.ini
@@ -196,7 +196,7 @@ The update path preserves the database, Agent token, Admin users, API keys, Allo
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/update.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
 | sudo bash
 ```
 
@@ -204,7 +204,7 @@ Create a consistent full database backup during update:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/update.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
 | sudo bash -s -- --backup-db
 ```
 
@@ -221,7 +221,7 @@ Fast health check:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/doctor.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/doctor.sh \
 | sudo bash
 ```
 
@@ -229,7 +229,7 @@ Deep production audit:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/audit.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
 | sudo bash
 ```
 
@@ -237,7 +237,7 @@ Audit including every bundled regression suite:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/audit.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
 | sudo bash -s -- --full-preflight
 ```
 
@@ -245,7 +245,7 @@ Read-only SQLite quick check:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/db-check.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/db-check.sh \
 | sudo bash -s -- --timeout 120
 ```
 
@@ -263,7 +263,7 @@ Create a consistent SQLite backup plus protected configuration:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/backup.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/backup.sh \
 | sudo bash
 ```
 
@@ -286,7 +286,7 @@ The restore tool validates the backup with `PRAGMA quick_check`, backs up the cu
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/collect-diagnostics.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/collect-diagnostics.sh \
 | sudo bash
 ```
 
@@ -298,7 +298,7 @@ Safe Monitor uninstall, with an automatic restorable backup:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
 | sudo bash -s -- --yes
 ```
 
@@ -306,7 +306,7 @@ Permanent data purge, no uninstall backup:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
 | sudo bash -s -- --purge-data --yes
 ```
 
@@ -314,7 +314,7 @@ Remove an Agent and its state:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
 | sudo bash
 ```
 
@@ -322,18 +322,18 @@ Preserve Agent counter/state files:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall-agent.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
 | sudo bash -s -- --keep-state
 ```
 
 ## Publish this repository to GitHub
 
-This source tree contains no production database or real credentials. To create or update `tuanchu1121/bw-monitor-production` from a machine authenticated with GitHub CLI:
+This source tree contains no production database or real credentials. To create or update `tuanchu1121/bw-monitor-production.1` from a machine authenticated with GitHub CLI:
 
 ```bash
 gh auth login
 ./publish-github.sh \
-  --repo tuanchu1121/bw-monitor-production \
+  --repo tuanchu1121/bw-monitor-production.1 \
   --public \
   --release
 ```

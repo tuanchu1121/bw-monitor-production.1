@@ -7,7 +7,7 @@ Install and authenticate GitHub CLI on a trusted workstation, then run from this
 ```bash
 gh auth login
 ./publish-github.sh \
-  --repo tuanchu1121/bw-monitor-production \
+  --repo tuanchu1121/bw-monitor-production.1 \
   --public \
   --release
 ```
@@ -50,7 +50,7 @@ For a private repository, export a fine-grained read-only token before using a b
 
 ```bash
 export GITHUB_TOKEN='READ_ONLY_TOKEN'
-export BW_GITHUB_REPO='tuanchu1121/bw-monitor-production'
+export BW_GITHUB_REPO='tuanchu1121/bw-monitor-production.1'
 export BW_GITHUB_REF='main'
 
 curl -fsSL \

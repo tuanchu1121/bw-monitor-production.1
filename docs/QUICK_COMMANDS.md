@@ -3,40 +3,40 @@
 ## Install Monitor with IP
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- --public-ip 203.0.113.10 --port 8080 --run-retention-now
 ```
 
 ## Install Monitor with domain
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- --domain monitor.example.com --email ops@example.com
 ```
 
 ## Install/update one Agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install-agent.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
 | sudo env BW_AGENT_API='https://monitor.example.com/push' BW_AGENT_TOKEN='TOKEN' bash
 ```
 
 ## Update Monitor
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh | sudo bash
 ```
 
 ## Doctor
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/doctor.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/doctor.sh | sudo bash
 ```
 
 ## Full audit
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/audit.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
 | sudo bash -s -- --full-preflight
 ```
 
@@ -69,13 +69,13 @@ journalctl -fu bwagent.service
 ## Safe Monitor removal
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
 | sudo bash -s -- --yes
 ```
 
 ## Agent removal
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/uninstall-agent.sh \
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
 | sudo bash
 ```

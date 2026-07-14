@@ -10,7 +10,7 @@ BW Monitor is installed directly on a Debian or Ubuntu server with systemd. The 
 sudo apt-get update \
 && sudo apt-get install -y curl ca-certificates \
 && curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- \
   --public-ip 203.0.113.10 \
   --port 8080 \
@@ -21,7 +21,7 @@ Optional non-interactive secrets:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo env \
   BW_ADMIN_PASSWORD='USE_A_LONG_UNIQUE_PASSWORD' \
   BW_MONITOR_TOKEN='USE_A_LONG_RANDOM_AGENT_TOKEN' \
@@ -36,7 +36,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install
 sudo apt-get update \
 && sudo apt-get install -y curl ca-certificates \
 && curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- \
   --domain monitor.example.com \
   --email ops@example.com

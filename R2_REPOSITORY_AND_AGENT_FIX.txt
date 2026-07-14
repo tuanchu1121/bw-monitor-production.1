@@ -1,0 +1,16 @@
+BW Monitor v48.13.0-prod-r2
+
+Corrections:
+1. Default repository is now:
+   tuanchu1121/bw-monitor-production.1
+
+2. install-agent.sh now deploys the per-disk agent containing:
+   - VM block inventory
+   - block source path
+   - mount and logical storage mapping
+   - per-disk read/write throughput
+   - per-disk read/write IOPS
+   - assigned, allocation and physical bytes
+
+Upgrade:
+Rerun the normal monitor or agent installer. No database reset is required.

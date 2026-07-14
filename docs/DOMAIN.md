@@ -11,7 +11,7 @@
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/install.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
 | sudo bash -s -- \
   --domain monitor.example.com \
   --email ops@example.com

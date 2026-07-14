@@ -32,7 +32,7 @@ Checks:
 
 ```bash
 curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production/main/audit.sh \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
 | sudo bash -s -- --full-preflight
 ```
 

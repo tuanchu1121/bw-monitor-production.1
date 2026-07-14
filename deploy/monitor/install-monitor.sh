@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 RELEASE="48.13.0-prod-r1"
-GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production}"
+GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 GITHUB_REF="${BW_GITHUB_REF:-main}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
