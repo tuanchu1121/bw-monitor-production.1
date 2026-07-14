@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BW Monitor v49 current-state reconciliation
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=bw-enterprise-reconcile.service
+
+[Install]
+WantedBy=timers.target

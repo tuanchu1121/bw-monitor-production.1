@@ -1,0 +1,20 @@
+BW Monitor 49.0.0-prod-r1-enterprise-timescale
+================================================
+
+Major architecture upgrade:
+
+- PostgreSQL 17 + TimescaleDB analytical data plane.
+- Redis Streams asynchronous ingestion.
+- Atomic local outbox for every accepted push.
+- Idempotent writer with pending-message reclaim, retry tracking and dead letters.
+- Current projections for nodes, VMs, per-VM disks and node storage mounts.
+- Raw hypertables for network, VM performance, per-disk, node, storage, physical NIC and Agent health metrics.
+- 5-minute and 1-hour continuous aggregates.
+- Online SQLite migration with checkpoints and resumability.
+- Current-state reconciliation and daily dual-database backups.
+- Enterprise health, top-disk, storage and history APIs.
+- Exact VM/node purge synchronization with tombstones for older queued pushes.
+- Existing v48 Dashboard, Top VM, Abuse, Node Health, Admin, Agent and SQLite control plane remain compatible.
+
+The Enterprise installer starts historical backfill in the background by default.
+No Agent reinstall is required.

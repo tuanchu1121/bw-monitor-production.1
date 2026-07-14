@@ -1,0 +1,15 @@
+[Unit]
+Description=BW Monitor v49 enterprise backup
+After=docker.service bw-enterprise-writer.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/default/bw-monitor
+EnvironmentFile=/etc/default/bw-monitor-enterprise
+ExecStart=/opt/bw-monitor/enterprise/bw-enterprise-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+TimeoutStartSec=4h

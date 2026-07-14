@@ -331,6 +331,11 @@ def _transactional_purge(module, action: str, params: dict[str, Any]) -> dict[st
                 raise
             finally:
                 conn.close()
+            if hasattr(module, "enterprise_enqueue_control"):
+                control_action = "purge_node" if action == "purge_nodes" else "purge_node_vms"
+                queue_state = module.enterprise_enqueue_control(control_action, node=node)
+                if isinstance(deleted, dict):
+                    deleted["enterprise_queue"] = queue_state
             result["items"].append({"node": node, "deleted": deleted})
             if index % batch_size == 0 or index == total:
                 report(index, total, "Node purge")
@@ -378,6 +383,10 @@ def _transactional_purge(module, action: str, params: dict[str, Any]) -> dict[st
                 raise
             finally:
                 conn.close()
+            if hasattr(module, "enterprise_enqueue_control"):
+                queue_state = module.enterprise_enqueue_control("purge_vm", node=item["node"], vm_uuid=item["vm_uuid"])
+                if isinstance(deleted, dict):
+                    deleted["enterprise_queue"] = queue_state
             result["items"].append({**item, "deleted": deleted})
             if index % batch_size == 0 or index == total:
                 report(index, total, "VM purge")

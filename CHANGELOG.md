@@ -1,5 +1,17 @@
 # Changelog
 
+## 49.0.0-prod-r1-enterprise-timescale
+
+- Added PostgreSQL 17 + TimescaleDB as a high-volume analytical and historical data plane.
+- Added Redis Streams ingestion with an atomic local spool written before queue delivery.
+- Added idempotent asynchronous writer, pending-message recovery, retry counters and dead-letter storage.
+- Added node, VM, per-disk and per-storage current projections plus raw time-series hypertables.
+- Added 5-minute and 1-hour continuous aggregates and Enterprise history APIs.
+- Added online checkpointed migration from the existing SQLite database.
+- Added daily current-state reconciliation and dual SQLite/Timescale backup/restore tooling.
+- Added exact VM/node purge synchronization, purge tombstones and aggregate refresh for affected ranges.
+- Kept the existing UI, Abuse Engine, Admin workflow, Agent protocol and SQLite compatibility/control plane available during Enterprise component outages.
+
 ## 48.14.0-prod-r1-performance-edition
 
 - Added Redis hot-page cache with process-local fallback and short, safe TTLs.

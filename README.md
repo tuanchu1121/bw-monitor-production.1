@@ -1,12 +1,31 @@
-# BW Monitor v48.14.0 High Performance Edition
+# BW Monitor v49 Enterprise Timescale Edition
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **48.14.0-prod-r1-performance-edition**, built on and preserving the v48.12.9-r4 operational UI and all v48.13.x storage features. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **49.0.0-prod-r1-enterprise-timescale**, built on and preserving the v48.12.9-r4 operational UI and all v48.13.x storage features. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
 
+
+## v49 complete architecture upgrade
+
+Version **49.0.0-prod-r1-enterprise-timescale** adds PostgreSQL 17 + TimescaleDB, Redis Streams, an atomic local outbox, asynchronous ingestion, resumable SQLite migration, 5-minute/1-hour continuous aggregates, exact Enterprise purge synchronization, dual-database backups and new analytical APIs. The existing operational UI and SQLite control plane remain available as the compatibility/fallback path.
+
+Complete in-place installation or upgrade:
+
+```bash
+unset HISTFILE
+
+curl -fsSL \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-enterprise.sh \
+| bash -s -- \
+--public-ip 45.92.158.124
+```
+
+Current state is migrated before the installer returns. Historical migration continues in the background by default. No Agent reinstall is required.
+
+See [docs/ENTERPRISE.md](docs/ENTERPRISE.md) for architecture, migration, backups, status, rollback and API details.
 
 ### Active swap visibility and Top VM slot sorting (48.13.9-r2)
 

@@ -1,0 +1,28 @@
+[Unit]
+Description=BW Monitor v49 Redis Streams to TimescaleDB writer
+After=network-online.target redis-server.service docker.service
+Wants=network-online.target redis-server.service docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/default/bw-monitor
+EnvironmentFile=/etc/default/bw-monitor-enterprise
+WorkingDirectory=/opt/bw-monitor/enterprise
+ExecStart=/opt/bw-monitor/venv/bin/python3 /opt/bw-monitor/enterprise/bw_enterprise_writer.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=45
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bw-monitor-enterprise /var/log/bw-monitor-enterprise
+LimitNOFILE=262144
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

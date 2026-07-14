@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="48.14.0-prod-r1-performance-edition"
+RELEASE="49.0.0-prod-r1-enterprise-timescale"
 GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 GITHUB_REF="${BW_GITHUB_REF:-main}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,7 +65,7 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'USAGE'
-BW Monitor production installer
+BW Monitor v49 production installer
 
 Usage:
   install-monitor.sh [options]

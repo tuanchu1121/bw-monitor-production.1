@@ -28266,3 +28266,452 @@ def _v48139_current_rows(values):
     finally:
         conn.close()
     return _v48139_current_rows_v48140_summary(values)
+
+# ---------------------------------------------------------------------------
+# v49.0.0 Enterprise Timescale architecture
+# ---------------------------------------------------------------------------
+V4900_VERSION = "49.0.0"
+V4900_ENTERPRISE_ENABLED = os.environ.get("BW_ENTERPRISE_ENABLED", "0") == "1"
+V4900_PG_DSN = os.environ.get("BW_ENTERPRISE_PG_DSN", "")
+V4900_STREAM = os.environ.get("BW_ENTERPRISE_STREAM", "bw:enterprise:ingest:v1")
+V4900_STREAM_MAXLEN = max(0, int(os.environ.get("BW_ENTERPRISE_STREAM_MAXLEN", "0")))
+V4900_SPOOL = os.environ.get("BW_ENTERPRISE_SPOOL", "/var/lib/bw-monitor-enterprise/spool")
+
+try:
+    import psycopg as _v4900_psycopg
+except Exception:
+    _v4900_psycopg = None
+
+
+def _v4900_spool_payload(payload):
+    """Write every accepted push to an atomic local spool before queueing it.
+
+    Redis Streams is the fast delivery path.  The spool is the durability path:
+    a Redis restart, AOF loss, or a long PostgreSQL outage cannot silently drop
+    an agent sample that the legacy endpoint already accepted.
+    """
+    try:
+        inbox = os.path.join(V4900_SPOOL, "inbox")
+        os.makedirs(inbox, mode=0o750, exist_ok=True)
+        node = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(payload.get("node") or "node"))[:96]
+        stamp = safe_int(payload.get("time"), now_ts())
+        name = f"{stamp}-{node}-{secrets.token_hex(6)}.json"
+        tmp = os.path.join(inbox, "." + name + ".tmp")
+        final = os.path.join(inbox, name)
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, separators=(",", ":"), ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, final)
+        return final
+    except Exception:
+        app.logger.exception("v49 enterprise spool failed")
+        return ""
+
+
+def _v4900_enqueue_payload(payload):
+    if not V4900_ENTERPRISE_ENABLED or not isinstance(payload, dict):
+        return "disabled"
+    spool_file = _v4900_spool_payload(payload)
+    if not spool_file:
+        return "failed"
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    client = _v48140_redis_client() if "_v48140_redis_client" in globals() else None
+    if client is not None:
+        try:
+            fields = {
+                "payload": raw,
+                "node": str(payload.get("node") or ""),
+                "push_time": str(safe_int(payload.get("time"), 0)),
+                "spool_file": spool_file,
+            }
+            if V4900_STREAM_MAXLEN > 0:
+                client.xadd(V4900_STREAM, fields, maxlen=V4900_STREAM_MAXLEN, approximate=True)
+            else:
+                client.xadd(V4900_STREAM, fields)
+            return "redis+spool"
+        except Exception:
+            app.logger.exception("v49 Redis Stream enqueue failed; durable spool retained")
+    return "spool"
+
+
+_v4900_push_base = app.view_functions.get("push")
+if _v4900_push_base is not None:
+    def push_v4900():
+        payload = request.get_json(silent=True)
+        result = _v4900_push_base()
+        response = app.make_response(result)
+        if 200 <= response.status_code < 300 and isinstance(payload, dict) and payload.get("node"):
+            queued = _v4900_enqueue_payload(payload)
+            response.headers["X-BW-Enterprise-Queue"] = queued
+        return response
+    push_v4900.__name__ = getattr(_v4900_push_base, "__name__", "push")
+    app.view_functions["push"] = push_v4900
+
+
+def _v4900_pg_connect():
+    if not V4900_ENTERPRISE_ENABLED or not V4900_PG_DSN or _v4900_psycopg is None:
+        return None
+    return _v4900_psycopg.connect(V4900_PG_DSN, connect_timeout=3, application_name="bw-monitor-web-v49")
+
+
+def _v4900_json_value(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _v4900_rows(cur):
+    names = [item.name for item in cur.description]
+    return [{name: _v4900_json_value(value) for name, value in zip(names, row)} for row in cur.fetchall()]
+
+
+def _v4900_enterprise_status():
+    status = {
+        "version": V4900_VERSION,
+        "enabled": V4900_ENTERPRISE_ENABLED,
+        "postgres": {"configured": bool(V4900_PG_DSN), "connected": False},
+        "redis_stream": {"name": V4900_STREAM, "connected": False, "length": 0, "pending": 0},
+        "spool": {"path": V4900_SPOOL, "files": 0},
+    }
+    client = _v48140_redis_client() if "_v48140_redis_client" in globals() else None
+    if client is not None:
+        try:
+            status["redis_stream"]["connected"] = bool(client.ping())
+            status["redis_stream"]["length"] = safe_int(client.xlen(V4900_STREAM), 0)
+            try:
+                groups = client.xinfo_groups(V4900_STREAM)
+                status["redis_stream"]["pending"] = sum(safe_int(g.get("pending"), 0) for g in groups)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    try:
+        inbox = os.path.join(V4900_SPOOL, "inbox")
+        status["spool"]["files"] = len([x for x in os.listdir(inbox) if x.endswith(".json")]) if os.path.isdir(inbox) else 0
+    except Exception:
+        pass
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is not None:
+            with conn.cursor() as cur:
+                cur.execute("SELECT schema_version,nodes,vms,customer_disks,storage_mounts,latest_node_sample,dead_letters FROM (SELECT value AS schema_version FROM bw.enterprise_meta WHERE key='schema_version') m CROSS JOIN bw.enterprise_health")
+                row = cur.fetchone()
+                if row:
+                    status["postgres"].update({
+                        "connected": True,
+                        "schema_version": row[0],
+                        "nodes": safe_int(row[1]),
+                        "vms": safe_int(row[2]),
+                        "customer_disks": safe_int(row[3]),
+                        "storage_mounts": safe_int(row[4]),
+                        "latest_node_sample": _v4900_json_value(row[5]),
+                        "dead_letters": safe_int(row[6]),
+                    })
+    except Exception as exc:
+        status["postgres"]["error"] = str(exc)[:300]
+    finally:
+        if conn is not None:
+            conn.close()
+    return status
+
+
+@app.route("/api/v1/enterprise/health")
+def api_v1_enterprise_health_v4900():
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    return jsonify(_v4900_enterprise_status())
+
+
+@app.route("/api/v1/enterprise/top-disks")
+def api_v1_enterprise_top_disks_v4900():
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    limit = max(1, min(500, safe_int(request.args.get("limit"), 50)))
+    sort = (request.args.get("sort") or "write_iops").lower()
+    sort_map = {
+        "write_iops": "write_iops", "read_iops": "read_iops", "write": "write_bps",
+        "read": "read_bps", "allocated": "allocated_bytes", "assigned": "assigned_bytes",
+        "percent": "allocation_ratio", "slots": "disk_count",
+    }
+    order_by = sort_map.get(sort, "write_iops")
+    where = ["1=1"]
+    params = []
+    node = (request.args.get("node") or "").strip()
+    mount = (request.args.get("mount") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    if node:
+        where.append("s.node=%s"); params.append(node)
+    if mount:
+        where.append("EXISTS(SELECT 1 FROM bw.vm_disk_current d WHERE d.node=s.node AND d.vm_uuid=s.vm_uuid AND d.role='customer' AND d.mount=%s)"); params.append(mount)
+    if q:
+        where.append("(s.node ILIKE %s OR s.vm_uuid ILIKE %s)"); params.extend([f"%{q}%", f"%{q}%"])
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            cur.execute(f"""SELECT s.node,s.vm_uuid,n.public_ipv4,s.disk_count,s.allocated_bytes,s.assigned_bytes,
+                                     s.allocation_ratio,s.read_bps,s.write_bps,s.read_iops,s.write_iops,s.last_seen
+                                FROM bw.vm_disk_summary_current s
+                                LEFT JOIN bw.node_current n ON n.node=s.node
+                               WHERE {' AND '.join(where)}
+                               ORDER BY {order_by} DESC,s.node,s.vm_uuid LIMIT %s""", params + [limit])
+            return jsonify({"items": _v4900_rows(cur), "limit": limit, "sort": sort})
+    except Exception as exc:
+        app.logger.exception("v49 top-disks query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None: conn.close()
+
+
+@app.route("/api/v1/enterprise/storage")
+def api_v1_enterprise_storage_v4900():
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    limit = max(1, min(1000, safe_int(request.args.get("limit"), 200)))
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            cur.execute("""SELECT s.node,n.public_ipv4,s.mount,s.device,s.block,s.raid_level,s.fstype,
+                                  s.size_bytes,s.used_bytes,s.avail_bytes,s.use_percent,s.read_bps,s.write_bps,
+                                  s.read_iops,s.write_iops,s.util_percent,s.last_seen
+                             FROM bw.node_storage_current s LEFT JOIN bw.node_current n ON n.node=s.node
+                            ORDER BY s.write_iops DESC,s.write_bps DESC,s.node,s.mount LIMIT %s""", (limit,))
+            return jsonify({"items": _v4900_rows(cur), "limit": limit})
+    except Exception as exc:
+        app.logger.exception("v49 storage query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None: conn.close()
+
+
+@app.route("/api/v1/enterprise/vm/<vm_uuid>/disks")
+def api_v1_enterprise_vm_disks_v4900(vm_uuid):
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            cur.execute("""SELECT node,vm_uuid,target,source,role,mount,storage_device,storage_block,storage_fstype,
+                                  capacity_bytes,allocation_bytes,physical_bytes,read_bps,write_bps,read_iops,write_iops,last_seen
+                             FROM bw.vm_disk_current WHERE vm_uuid=%s ORDER BY node,target,source""", (vm_uuid,))
+            return jsonify({"vm_uuid": vm_uuid, "items": _v4900_rows(cur)})
+    except Exception as exc:
+        app.logger.exception("v49 vm disk query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None: conn.close()
+
+
+def _v4900_history_period(value):
+    periods = {
+        "1h": ("1 hour", "5m"),
+        "6h": ("6 hours", "5m"),
+        "24h": ("24 hours", "5m"),
+        "2d": ("2 days", "5m"),
+        "7d": ("7 days", "1h"),
+        "30d": ("30 days", "1h"),
+        "90d": ("90 days", "1h"),
+        "180d": ("180 days", "1h"),
+    }
+    return periods.get((value or "24h").lower(), periods["24h"])
+
+
+@app.route("/api/v1/enterprise/history/vm/<vm_uuid>")
+def api_v1_enterprise_vm_history_v4900(vm_uuid):
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    interval, tier = _v4900_history_period(request.args.get("period"))
+    node = (request.args.get("node") or "").strip()
+    params = [vm_uuid]
+    node_sql = ""
+    if node:
+        node_sql = " AND node=%s"
+        params.append(node)
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            if tier == "5m":
+                cur.execute(f"""SELECT bucket,node,vm_uuid,cpu_percent_avg,cpu_percent_peak,vcpu_current,
+                                         ram_current_kib,ram_maximum_kib,ram_rss_kib,disk_read_bps,
+                                         disk_write_bps,disk_read_iops,disk_write_iops,samples
+                                    FROM bw.vm_perf_5m
+                                   WHERE vm_uuid=%s{node_sql} AND bucket>=now()-%s::interval
+                                   ORDER BY bucket""", params + [interval])
+            else:
+                cur.execute(f"""SELECT bucket,node,vm_uuid,cpu_percent_avg,cpu_percent_peak,vcpu_current,
+                                         ram_current_kib,ram_maximum_kib,ram_rss_kib,disk_read_bps,
+                                         disk_write_bps,disk_read_iops,disk_write_iops,samples
+                                    FROM bw.vm_perf_1h
+                                   WHERE vm_uuid=%s{node_sql} AND bucket>=now()-%s::interval
+                                   ORDER BY bucket""", params + [interval])
+            perf = _v4900_rows(cur)
+            if tier == "5m":
+                cur.execute(f"""SELECT bucket,node,vm_uuid,rx_mbps_avg,tx_mbps_avg,rx_mbps_peak,tx_mbps_peak,
+                                         rx_pps_avg,tx_pps_avg,rx_pps_peak,tx_pps_peak,rx_bytes,tx_bytes,samples
+                                    FROM bw.vm_network_5m
+                                   WHERE vm_uuid=%s{node_sql} AND bucket>=now()-%s::interval
+                                   ORDER BY bucket""", params + [interval])
+            else:
+                cur.execute(f"""SELECT bucket,node,vm_uuid,rx_mbps_avg,tx_mbps_avg,rx_mbps_peak,tx_mbps_peak,
+                                         rx_pps_avg,tx_pps_avg,rx_pps_peak,tx_pps_peak,rx_bytes,tx_bytes,samples
+                                    FROM bw.vm_network_1h
+                                   WHERE vm_uuid=%s{node_sql} AND bucket>=now()-%s::interval
+                                   ORDER BY bucket""", params + [interval])
+            network = _v4900_rows(cur)
+            return jsonify({"vm_uuid": vm_uuid, "node": node or None, "period": request.args.get("period") or "24h", "tier": tier, "performance": perf, "network": network})
+    except Exception as exc:
+        app.logger.exception("v49 VM history query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/api/v1/enterprise/history/disks/<vm_uuid>")
+def api_v1_enterprise_disk_history_v4900(vm_uuid):
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    interval, tier = _v4900_history_period(request.args.get("period"))
+    node = (request.args.get("node") or "").strip()
+    target = (request.args.get("target") or "").strip()
+    where = ["vm_uuid=%s", "bucket>=now()-%s::interval"]
+    params = [vm_uuid, interval]
+    if node:
+        where.append("node=%s"); params.append(node)
+    if target:
+        where.append("target=%s"); params.append(target)
+    view = "bw.vm_disk_5m" if tier == "5m" else "bw.vm_disk_1h"
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            cur.execute(f"""SELECT bucket,node,vm_uuid,target,mount,storage_device,capacity_bytes,allocation_bytes,
+                                      read_bps,write_bps,read_iops,write_iops,read_bps_peak,write_bps_peak,
+                                      read_iops_peak,write_iops_peak,samples
+                                 FROM {view}
+                                WHERE {' AND '.join(where)}
+                                ORDER BY bucket,node,target""", params)
+            return jsonify({"vm_uuid": vm_uuid, "node": node or None, "target": target or None, "period": request.args.get("period") or "24h", "tier": tier, "items": _v4900_rows(cur)})
+    except Exception as exc:
+        app.logger.exception("v49 disk history query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/api/v1/enterprise/history/storage")
+def api_v1_enterprise_storage_history_v4900():
+    if not dashboard_allowed():
+        return jsonify({"error": "authentication required"}), 401
+    interval, tier = _v4900_history_period(request.args.get("period"))
+    node = (request.args.get("node") or "").strip()
+    mount = (request.args.get("mount") or "").strip()
+    where = ["bucket>=now()-%s::interval"]
+    params = [interval]
+    if node:
+        where.append("node=%s"); params.append(node)
+    if mount:
+        where.append("mount=%s"); params.append(mount)
+    view = "bw.node_storage_5m" if tier == "5m" else "bw.node_storage_1h"
+    conn = None
+    try:
+        conn = _v4900_pg_connect()
+        if conn is None:
+            return jsonify({"error": "enterprise_not_configured"}), 503
+        with conn.cursor() as cur:
+            cur.execute(f"""SELECT bucket,node,mount,device,size_bytes,used_bytes,use_percent,read_bps,write_bps,
+                                      read_iops,write_iops,util_percent_peak,samples
+                                 FROM {view}
+                                WHERE {' AND '.join(where)}
+                                ORDER BY bucket,node,mount""", params)
+            return jsonify({"node": node or None, "mount": mount or None, "period": request.args.get("period") or "24h", "tier": tier, "items": _v4900_rows(cur)})
+    except Exception as exc:
+        app.logger.exception("v49 storage history query failed")
+        return jsonify({"error": "enterprise_query_failed", "detail": str(exc)[:300]}), 503
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/enterprise")
+def enterprise_page_v4900():
+    guard = require_dashboard()
+    if guard is not None:
+        return guard
+    status = _v4900_enterprise_status()
+    pg = status["postgres"]
+    rs = status["redis_stream"]
+    pg_state = "ONLINE" if pg.get("connected") else "OFFLINE"
+    redis_state = "ONLINE" if rs.get("connected") else "OFFLINE"
+    content = f"""
+    <div class="card page-hero"><div><span class="eyebrow">V49 ENTERPRISE</span><h2>Timescale Architecture</h2><p>SQLite compatibility/control plane, Redis Streams ingestion, and PostgreSQL/TimescaleDB analytics.</p></div><div class="hero-meta"><span>Version <b>{V4900_VERSION}</b></span><span>Enterprise <b>{'Enabled' if V4900_ENTERPRISE_ENABLED else 'Disabled'}</b></span></div></div>
+    <div class="kpi-grid">
+      <div class="kpi"><span>TimescaleDB</span><b>{pg_state}</b><small>Schema {escape(str(pg.get('schema_version') or '-'))}</small></div>
+      <div class="kpi"><span>Redis Stream</span><b>{redis_state}</b><small>{safe_int(rs.get('length')):,} entries · {safe_int(rs.get('pending')):,} pending</small></div>
+      <div class="kpi"><span>Nodes / VMs</span><b>{safe_int(pg.get('nodes')):,} / {safe_int(pg.get('vms')):,}</b><small>Timescale current projection</small></div>
+      <div class="kpi"><span>Customer Disks</span><b>{safe_int(pg.get('customer_disks')):,}</b><small>{safe_int(pg.get('storage_mounts')):,} node storage roots</small></div>
+      <div class="kpi"><span>Spool</span><b>{safe_int(status['spool'].get('files')):,}</b><small>durable local fallback files</small></div>
+      <div class="kpi"><span>Dead Letters</span><b>{safe_int(pg.get('dead_letters')):,}</b><small>requires operator review</small></div>
+    </div>
+    <div class="card"><h3>Enterprise APIs</h3><p><code>/api/v1/enterprise/health</code> · <code>/api/v1/enterprise/top-disks</code> · <code>/api/v1/enterprise/storage</code> · <code>/api/v1/enterprise/vm/&lt;uuid&gt;/disks</code> · <code>/api/v1/enterprise/history/vm/&lt;uuid&gt;</code> · <code>/api/v1/enterprise/history/disks/&lt;uuid&gt;</code> · <code>/api/v1/enterprise/history/storage</code></p><p class="muted">The legacy dashboard remains available even when TimescaleDB is offline. Accepted pushes queue to Redis and fall back to an atomic local spool.</p></div>
+    """
+    return page("Enterprise", content)
+
+# ---------------------------------------------------------------------------
+# v49 durable control-plane synchronization for exact VM/node purges
+# ---------------------------------------------------------------------------
+def enterprise_enqueue_control(action, node="", vm_uuid=""):
+    """Queue a committed SQLite purge for exact deletion in TimescaleDB.
+
+    The maintenance worker calls this only after its SQLite transaction commits.
+    Every control message is atomically spooled before Redis delivery, using the
+    same durable outbox as metric ingestion.
+    """
+    if not V4900_ENTERPRISE_ENABLED:
+        return "disabled"
+    envelope = {
+        "_bw_kind": "control",
+        "action": str(action or "").strip(),
+        "node": str(node or "").strip(),
+        "vm_uuid": str(vm_uuid or "").strip(),
+        "time": now_ts(),
+    }
+    spool_file = _v4900_spool_payload(envelope)
+    if not spool_file:
+        return "failed"
+    client = _v48140_redis_client() if "_v48140_redis_client" in globals() else None
+    if client is not None:
+        try:
+            fields = {
+                "kind": "control",
+                "payload": json.dumps(envelope, separators=(",", ":"), ensure_ascii=False),
+                "node": envelope["node"],
+                "vm_uuid": envelope["vm_uuid"],
+                "push_time": str(envelope["time"]),
+                "spool_file": spool_file,
+            }
+            if V4900_STREAM_MAXLEN > 0:
+                client.xadd(V4900_STREAM, fields, maxlen=V4900_STREAM_MAXLEN, approximate=True)
+            else:
+                client.xadd(V4900_STREAM, fields)
+            return "redis+spool"
+        except Exception:
+            app.logger.exception("v49 control enqueue failed; durable spool retained")
+    return "spool"
