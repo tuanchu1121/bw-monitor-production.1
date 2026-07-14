@@ -1,3 +1,17 @@
+# Changelog
+
+## 48.14.0-prod-r1-performance-edition
+
+- Added Redis hot-page cache with process-local fallback and short, safe TTLs.
+- Replaced request-time schema DDL with tuned SQLite connections using WAL, mmap, a larger page cache, in-memory temporary tables and prepared-statement caching.
+- Added transactionally maintained materialized summaries for per-VM disk totals and per-node storage mounts.
+- Reworked Storage I/O grouped views to use SQL pagination and load child disks/filesystems only for the visible page.
+- Reworked Current Abuse disk-capacity joins to use the materialized summary instead of recalculating disk GROUP BY queries on every request.
+- Added HTML/JSON gzip compression, Gunicorn preload, four worker threads by default and browser content-visibility containment for off-screen cards.
+- Added RAM-aware SQLite cache/mmap sizing, preserved custom performance values on update, and removed the duplicate full regression pass from the install path.
+- Added `/api/v1/performance`, response timing headers, Redis/SQLite health checks and a synthetic large-dataset benchmark tool.
+- Kept the existing UI, policies, retention, UUID purge behavior and Agent collector compatible.
+
 ## 48.13.9-prod-r1-abuse-storage-cards
 
 ## 48.13.9-prod-r2-swap-top-slots
@@ -16,8 +30,6 @@
 - Rebuilt Storage lookback/search controls with the same workflow and classes used by Top VM.
 - Restored visible color-coded Allocated / Assigned meters for VM totals and each nested disk.
 - Kept retained snapshot semantics, grouped All view, filtered per-disk view and bounded retention unchanged.
-
-# Changelog
 
 ## 48.13.7-prod-r1-storage-history-cards
 

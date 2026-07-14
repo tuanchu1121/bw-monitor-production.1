@@ -53,8 +53,8 @@ log 'Verify production installer flow'
 ./tools/test-installer-flow.sh
 
 log 'Verify release identity and deployment links'
-grep -q '^48.13.9-prod-r2-swap-top-slots$' VERSION || fail 'Root VERSION mismatch.'
-grep -q '^48.13.9-prod-r2-swap-top-slots$' release/VERSION || fail 'Release VERSION mismatch.'
+grep -q '^48.14.0-prod-r1-performance-edition$' VERSION || fail 'Root VERSION mismatch.'
+grep -q '^48.14.0-prod-r1-performance-edition$' release/VERSION || fail 'Release VERSION mismatch.'
 grep -q 'V48129_BUILD = "r4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Original application r4 marker missing.'
 grep -q 'V48133_VERSION = "48.13.3"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.3 storage integration missing.'
 grep -q 'V48134_VERSION = "48.13.4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.4 storage precision missing.'
@@ -68,6 +68,14 @@ grep -q 'V48138_VERSION = "48.13.8"' release/bw_monitor_app_v48_12_9_operations_
 grep -q 'V48138_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.8-r1 Storage identity build missing.'
 grep -q 'V48139_VERSION = "48.13.9"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.9 Abuse/Storage card UI missing.'
 grep -q 'V48139_BUILD = "r2"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.9-r2 build missing.'
+grep -q 'V48140_VERSION = "48.14.0"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.14.0 performance marker missing.'
+grep -q 'V48140_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.14.0-r1 build missing.'
+grep -q 'vm_disk_summary_current' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Materialized VM disk summary missing.'
+grep -q 'node_storage_mount_summary_current' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Materialized node storage summary missing.'
+grep -q 'redis-server' deploy/monitor/install-monitor.sh || fail 'Redis deployment support missing.'
+grep -q 'BW_GUNICORN_PRELOAD' deploy/monitor/start-monitor.sh || fail 'Gunicorn preload support missing.'
+grep -q 'test_v48_14_0_performance.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.14.0 performance regression is not wired into preflight.'
+test -x tools/benchmark-performance.py || fail 'Performance benchmark tool missing or not executable.'
 grep -q 'test_v48_13_9_abuse_storage_cards.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.13.9 regression is not wired into preflight.'
 grep -q 'test_v48_13_9_r2_swap_top_slots.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.13.9-r2 regression is not wired into preflight.'
 grep -q 'def collect_swap_filesystems' deploy/agent/agent.py || fail 'Active swap collector missing.'
@@ -84,11 +92,15 @@ grep -q 'install_bw_monitor_v48_12_9.sh' deploy/monitor/install-monitor.sh || fa
 grep -q 'db-check.sh' deploy/monitor/install-monitor.sh || fail 'Database checker is not installed.'
 grep -q 'collect-diagnostics.sh' deploy/monitor/install-monitor.sh || fail 'Diagnostics collector is not installed.'
 
-log 'Run full release preflight'
-(
-  cd release
-  BW_PYTHON_BIN="$PYTHON" BW_PREFLIGHT_ONLY=1 ./install_bw_monitor_v48_12_9.sh
-)
+if [[ "${BW_AUDIT_SKIP_FULL_PREFLIGHT:-0}" == "1" ]]; then
+  log 'Skip full release preflight because it was run separately in this build session'
+else
+  log 'Run full release preflight'
+  (
+    cd release
+    BW_PYTHON_BIN="$PYTHON" BW_PREFLIGHT_ONLY=1 ./install_bw_monitor_v48_12_9.sh
+  )
+fi
 
 log 'Remove Python caches created by validation'
 find . -path './.git' -prune -o -path './dist' -prune -o -type d -name '__pycache__' -prune -exec rm -rf {} +

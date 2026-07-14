@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="48.13.9-prod-r2-swap-top-slots"
+RELEASE="48.14.0-prod-r1-performance-edition"
 GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 GITHUB_REF="${BW_GITHUB_REF:-main}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,11 +27,13 @@ MONITOR_TOKEN="${BW_MONITOR_TOKEN:-}"
 TIMEZONE="Asia/Ho_Chi_Minh"
 WORKERS=""
 WORKERS_EXPLICIT=0
-THREADS="2"
+THREADS="4"
 THREADS_EXPLICIT=0
 NO_TLS=0
 NO_TLS_EXPLICIT=0
 NO_NGINX=0
+REDIS_ENABLED=1
+REDIS_EXPLICIT=0
 ENABLE_FIREWALL=0
 SSH_PORT=""
 BACKUP_DB=0
@@ -39,6 +41,23 @@ RECOVER_STUCK=0
 RUN_RETENTION_NOW=0
 UPDATE_ONLY=0
 SKIP_PREFLIGHT=0
+
+# Performance defaults are sized from host RAM and preserved on updates.
+RAM_MIB="$(( $(awk '/^MemTotal:/{print $2; exit}' /proc/meminfo 2>/dev/null || echo 4194304) / 1024 ))"
+if ((RAM_MIB >= 32768)); then
+  SQLITE_CACHE_MIB=1024; SQLITE_MMAP_MIB=4096; LOCAL_CACHE_ITEMS=2048
+elif ((RAM_MIB >= 16384)); then
+  SQLITE_CACHE_MIB=512; SQLITE_MMAP_MIB=2048; LOCAL_CACHE_ITEMS=1024
+elif ((RAM_MIB >= 8192)); then
+  SQLITE_CACHE_MIB=256; SQLITE_MMAP_MIB=1024; LOCAL_CACHE_ITEMS=512
+else
+  SQLITE_CACHE_MIB=128; SQLITE_MMAP_MIB=512; LOCAL_CACHE_ITEMS=256
+fi
+PAGE_CACHE_ENABLED=1
+PAGE_CACHE_TTL=6
+SQLITE_WAL_AUTOCHECKPOINT=4000
+SQLITE_JOURNAL_LIMIT_MIB=256
+GUNICORN_PRELOAD=1
 
 log() { printf '\n==> %s\n' "$*"; }
 warn() { printf '\nWARNING: %s\n' "$*" >&2; }
@@ -67,9 +86,10 @@ Options:
   --monitor-token VALUE     Agent push token. Prefer BW_MONITOR_TOKEN env.
   --timezone NAME           Server timezone. Default: Asia/Ho_Chi_Minh.
   --workers NUMBER          Gunicorn workers. Default: auto, max 4.
-  --threads NUMBER          Threads per worker. Default: 2.
+  --threads NUMBER          Threads per worker. Default: 4.
   --no-tls                  Use HTTP for a domain. Not recommended for production.
   --no-nginx                Do not install Nginx. Exposes Gunicorn on --port.
+  --no-redis                Disable Redis hot cache and use process-local fallback.
   --firewall                Configure and enable UFW. SSH port is detected.
   --ssh-port NUMBER         SSH port to allow before enabling UFW.
   --backup-db               Create a consistent SQLite backup during upgrade.
@@ -99,6 +119,7 @@ while (($#)); do
     --ssh-port) SSH_PORT="${2:?missing value}"; shift 2 ;;
     --no-tls) NO_TLS=1; NO_TLS_EXPLICIT=1; shift ;;
     --no-nginx) NO_NGINX=1; shift ;;
+    --no-redis) REDIS_ENABLED=0; REDIS_EXPLICIT=1; shift ;;
     --firewall) ENABLE_FIREWALL=1; shift ;;
     --backup-db) BACKUP_DB=1; shift ;;
     --recover-stuck) RECOVER_STUCK=1; shift ;;
@@ -144,6 +165,15 @@ if [[ -r "$ENV_FILE" ]]; then
   [[ -n "${BW_MONITOR_TOKEN:-}" && -z "$MONITOR_TOKEN" ]] && MONITOR_TOKEN="$BW_MONITOR_TOKEN"
   ((WORKERS_EXPLICIT)) || { [[ -n "${BW_GUNICORN_WORKERS:-}" ]] && WORKERS="$BW_GUNICORN_WORKERS"; }
   ((THREADS_EXPLICIT)) || { [[ -n "${BW_GUNICORN_THREADS:-}" ]] && THREADS="$BW_GUNICORN_THREADS"; }
+  ((REDIS_EXPLICIT)) || { [[ -n "${BW_REDIS_ENABLED:-}" ]] && REDIS_ENABLED="$BW_REDIS_ENABLED"; }
+  [[ -n "${BW_PAGE_CACHE_ENABLED:-}" ]] && PAGE_CACHE_ENABLED="$BW_PAGE_CACHE_ENABLED"
+  [[ -n "${BW_PAGE_CACHE_TTL:-}" ]] && PAGE_CACHE_TTL="$BW_PAGE_CACHE_TTL"
+  [[ -n "${BW_LOCAL_CACHE_ITEMS:-}" ]] && LOCAL_CACHE_ITEMS="$BW_LOCAL_CACHE_ITEMS"
+  [[ -n "${BW_SQLITE_CACHE_MIB:-}" ]] && SQLITE_CACHE_MIB="$BW_SQLITE_CACHE_MIB"
+  [[ -n "${BW_SQLITE_MMAP_MIB:-}" ]] && SQLITE_MMAP_MIB="$BW_SQLITE_MMAP_MIB"
+  [[ -n "${BW_SQLITE_WAL_AUTOCHECKPOINT:-}" ]] && SQLITE_WAL_AUTOCHECKPOINT="$BW_SQLITE_WAL_AUTOCHECKPOINT"
+  [[ -n "${BW_SQLITE_JOURNAL_LIMIT_MIB:-}" ]] && SQLITE_JOURNAL_LIMIT_MIB="$BW_SQLITE_JOURNAL_LIMIT_MIB"
+  [[ -n "${BW_GUNICORN_PRELOAD:-}" ]] && GUNICORN_PRELOAD="$BW_GUNICORN_PRELOAD"
   if ((NO_TLS_EXPLICIT == 0 && DOMAIN_EXPLICIT == 0)) && [[ -n "${BW_DOMAIN:-}" && "${BW_TLS_ENABLED:-0}" != "1" ]]; then NO_TLS=1; fi
   [[ "${BW_NGINX_ENABLED:-0}" == "1" ]] && NO_NGINX=0
 fi
@@ -182,6 +212,7 @@ log "Install operating-system dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 packages=(ca-certificates curl openssl python3 python3-venv python3-pip sqlite3)
+if ((REDIS_ENABLED)); then packages+=(redis-server); fi
 if [[ -n "$DOMAIN" && $NO_NGINX -eq 0 ]]; then
   packages+=(nginx)
   if ((NO_TLS == 0)); then
@@ -190,6 +221,10 @@ if [[ -n "$DOMAIN" && $NO_NGINX -eq 0 ]]; then
 fi
 if ((ENABLE_FIREWALL)); then packages+=(ufw); fi
 apt-get install -y --no-install-recommends "${packages[@]}"
+if ((REDIS_ENABLED)); then
+  systemctl enable --now redis-server >/dev/null 2>&1 || systemctl enable --now redis >/dev/null 2>&1 || warn "Redis service could not be started; local cache fallback will remain available."
+  if command -v redis-cli >/dev/null 2>&1; then redis-cli -h 127.0.0.1 ping >/dev/null 2>&1 || warn "Redis is installed but did not answer PING yet."; fi
+fi
 python3 - <<'PY_VERSION'
 import sys
 if sys.version_info < (3, 10):
@@ -305,6 +340,15 @@ BW_HOURLY_RETENTION_DAYS='7'
 BW_RETENTION_BATCH_ROWS='25000'
 BW_RETENTION_TZ_OFFSET_SECONDS='25200'
 BW_WRITE_LEGACY_USAGE='0'
+BW_REDIS_ENABLED='$REDIS_ENABLED'
+BW_REDIS_URL='redis://127.0.0.1:6379/0'
+BW_PAGE_CACHE_ENABLED='$PAGE_CACHE_ENABLED'
+BW_PAGE_CACHE_TTL='$PAGE_CACHE_TTL'
+BW_LOCAL_CACHE_ITEMS='$LOCAL_CACHE_ITEMS'
+BW_SQLITE_CACHE_MIB='$SQLITE_CACHE_MIB'
+BW_SQLITE_MMAP_MIB='$SQLITE_MMAP_MIB'
+BW_SQLITE_WAL_AUTOCHECKPOINT='$SQLITE_WAL_AUTOCHECKPOINT'
+BW_SQLITE_JOURNAL_LIMIT_MIB='$SQLITE_JOURNAL_LIMIT_MIB'
 BW_BACKFILL_CACHE_ON_START='0'
 BW_BACKFILL_INVENTORY_ON_START='0'
 BW_MAX_PURGE_ITEMS_PER_JOB='3'
@@ -312,6 +356,7 @@ BW_MAX_PURGE_SELECTION_ITEMS='300'
 BW_GUNICORN_BIND='$GUNICORN_BIND'
 BW_GUNICORN_WORKERS='$WORKERS'
 BW_GUNICORN_THREADS='$THREADS'
+BW_GUNICORN_PRELOAD='$GUNICORN_PRELOAD'
 BW_GUNICORN_TIMEOUT='300'
 BW_GUNICORN_GRACEFUL_TIMEOUT='60'
 BW_GUNICORN_KEEPALIVE='5'
@@ -373,6 +418,7 @@ log "Install or upgrade BW Monitor application"
   BW_PYTHON_BIN="$APP_DIR/venv/bin/python3" \
   BW_BACKUP_DB="$BACKUP_DB" \
   BW_RECOVER_STUCK_MAINTENANCE="$RECOVER_STUCK" \
+  BW_RELEASE_PREFLIGHT_ALREADY_PASSED=1 \
     ./install_bw_monitor_v48_12_9.sh
 )
 

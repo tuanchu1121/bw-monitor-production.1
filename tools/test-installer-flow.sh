@@ -14,7 +14,7 @@ line_of() {
 bash -n "$INSTALLER"
 bash -n "$BOOTSTRAP"
 
-grep -q 'RELEASE="48.13.9-prod-r2-swap-top-slots"' "$INSTALLER" || fail "Swap/Top VM slots release marker missing"
+grep -q 'RELEASE="48.14.0-prod-r1-performance-edition"' "$INSTALLER" || fail "High Performance release marker missing"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$BOOTSTRAP" || fail "bootstrap repository default is wrong"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$INSTALLER" || fail "deployment repository default is wrong"
 grep -q '^wait_for_http()' "$INSTALLER" || fail "HTTP readiness retry helper is missing"
@@ -30,4 +30,9 @@ verify_line="$(line_of 'Verify production services')"
 grep -q "printf 'BW_ADMIN_PASSWORD=%q" "$INSTALLER" || fail "Admin password is not written to the credential file"
 grep -q "chmod 0600 \"\$CREDENTIAL_FILE\"" "$INSTALLER" || fail "Credential file mode 0600 is missing"
 
-echo "PASS: production installer writes credentials before health checks, retries HTTP readiness, and recovers interrupted installs"
+grep -q 'redis-server' "$INSTALLER" || fail "Redis package installation is missing"
+grep -q 'BW_REDIS_ENABLED' "$INSTALLER" || fail "Redis environment configuration is missing"
+grep -q 'BW_SQLITE_MMAP_MIB' "$INSTALLER" || fail "SQLite performance environment is missing"
+grep -q 'BW_RELEASE_PREFLIGHT_ALREADY_PASSED=1' "$INSTALLER" || fail "Duplicate release preflight suppression is missing"
+
+echo "PASS: production installer writes credentials before health checks, configures the performance layer, retries HTTP readiness, and recovers interrupted installs"

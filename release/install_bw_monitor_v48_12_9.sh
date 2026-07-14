@@ -27,6 +27,7 @@ STORAGE_TEST_SRC="${23:-./test_v48_13_4_storage_precision.py}"
 STORAGE_HISTORY_TEST_SRC="${24:-./test_v48_13_7_storage_history.py}"
 ABUSE_STORAGE_CARDS_TEST_SRC="${25:-./test_v48_13_9_abuse_storage_cards.py}"
 SWAP_TOP_SLOTS_TEST_SRC="${26:-./test_v48_13_9_r2_swap_top_slots.py}"
+PERFORMANCE_TEST_SRC="${27:-./test_v48_14_0_performance.py}"
 
 TARGET_DIR="${BW_MONITOR_DIR:-/opt/bw-monitor}"
 APP_TARGET="${BW_MONITOR_APP_TARGET:-$TARGET_DIR/app.py}"
@@ -45,7 +46,7 @@ DEPLOY_STARTED=0
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$SWAP_TOP_SLOTS_TEST_SRC"; do
+for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$SWAP_TOP_SLOTS_TEST_SRC" "$PERFORMANCE_TEST_SRC"; do
   [[ -f "$file" ]] || die "Missing file: $file"
 done
 
@@ -87,8 +88,9 @@ rollback() {
   systemctl status "$SERVICE_NAME" --no-pager -l >&2 || true
 }
 
+if [[ "${BW_RELEASE_PREFLIGHT_ALREADY_PASSED:-0}" != "1" ]]; then
 say "Pre-flight syntax and release checks"
-"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$SWAP_TOP_SLOTS_TEST_SRC" "$AGENT_SRC"
+"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$SWAP_TOP_SLOTS_TEST_SRC" "$PERFORMANCE_TEST_SRC" "$AGENT_SRC"
 bash -n "$0" "$RECOVERY_SRC" "$DB_CHECK_SRC"
 grep -q 'V4810_VERSION = "48.10.0"' "$APP_SRC" || die "Missing v48.10.0 engine marker"
 grep -q 'V48101_VERSION = "48.10.1"' "$APP_SRC" || die "Missing v48.10.1 wide UI marker"
@@ -120,6 +122,11 @@ grep -q 'V48138_VERSION = "48.13.8"' "$APP_SRC" || die "Missing v48.13.8 Storage
 grep -q 'V48138_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.8-r1 Storage identity build marker"
 grep -q 'V48139_VERSION = "48.13.9"' "$APP_SRC" || die "Missing v48.13.9 Abuse/Storage card marker"
 grep -q 'V48139_BUILD = "r2"' "$APP_SRC" || die "Missing v48.13.9-r2 build marker"
+grep -q 'V48140_VERSION = "48.14.0"' "$APP_SRC" || die "Missing v48.14.0 performance marker"
+grep -q 'V48140_BUILD = "r1"' "$APP_SRC" || die "Missing v48.14.0-r1 performance build marker"
+grep -q 'CREATE TABLE IF NOT EXISTS vm_disk_summary_current' "$APP_SRC" || die "Missing materialized VM disk summary"
+grep -q 'BW_REDIS_ENABLED' "$APP_SRC" || die "Missing Redis hot-cache support"
+grep -q 'content-visibility:auto' "$APP_SRC" || die "Missing browser render containment"
 grep -q 'storage-vm-identity' "$APP_SRC" || die "Missing UUID-first Storage VM identity"
 grep -q 'storage-top-card' "$APP_SRC" || die "Missing Top VM-style Storage controls"
 grep -q 'storage_payload' "$APP_SRC" || die "Missing retained Storage payload"
@@ -209,10 +216,16 @@ say "Run isolated regression suites on temporary SQLite databases"
 "$PYTHON_BIN" "$STORAGE_HISTORY_TEST_SRC" "$APP_SRC"
 "$PYTHON_BIN" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$APP_SRC"
 "$PYTHON_BIN" "$SWAP_TOP_SLOTS_TEST_SRC" "$APP_SRC" "$AGENT_SRC"
+"$PYTHON_BIN" "$PERFORMANCE_TEST_SRC" "$APP_SRC"
+else
+  say "Reuse the production-installer preflight result"
+  "$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$AGENT_SRC"
+  bash -n "$0" "$RECOVERY_SRC" "$DB_CHECK_SRC"
+fi
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.13.9-r2 Swap / Top VM slots pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.14.0-r1 High Performance Edition pre-flight checks passed. No files were installed."
   exit 0
 fi
 
@@ -281,7 +294,7 @@ else
   echo "Database is preserved in place. Set BW_BACKUP_DB=1 for a consistent full DB backup."
 fi
 
-say "Install v48.12.9 files"
+say "Install v48.14.0 High Performance Edition files"
 mkdir -p "$TARGET_DIR"
 DEPLOY_STARTED=1
 install -m 0644 "$APP_SRC" "$APP_TARGET"
@@ -330,7 +343,7 @@ MAIN_PID="$(systemctl show "$SERVICE_NAME" -p MainPID --value 2>/dev/null || tru
   exit 1
 }
 
-say "Verify installed v48.12.9 against an isolated temporary database"
+say "Verify installed v48.14.0 against an isolated temporary database"
 if ! APP_VERIFY="$APP_TARGET" "$PYTHON_BIN" - <<'PY'
 import importlib.util, os, pathlib, tempfile
 app_path = pathlib.Path(os.environ["APP_VERIFY"]).resolve()
@@ -359,6 +372,7 @@ with tempfile.TemporaryDirectory(prefix="bw-monitor-v48129-install-check-") as t
         "V48126_VERSION": "48.12.6",
         "V48128_VERSION": "48.12.8",
         "V48129_VERSION": "48.12.9",
+        "V48140_VERSION": "48.14.0",
     }
     for key, expected in versions.items():
         if getattr(module, key, "") != expected:
@@ -380,7 +394,7 @@ with tempfile.TemporaryDirectory(prefix="bw-monitor-v48129-install-check-") as t
         "api_v1_me", "api_v1_health", "api_v1_abuse_summary", "api_v1_abuse_vms", "api_v1_abuse_vm", "api_v1_abuse_events",
         "api_v1_vms", "api_v1_vm_current", "api_v1_nodes", "api_v1_bandwidth_vms", "api_v1_bandwidth_vm",
         "api_v1_request_logs", "api_v1_management_logs",
-        "api_v1_abuse_incidents_v48126", "api_v1_abuse_rankings_v48126",
+        "api_v1_abuse_incidents_v48126", "api_v1_abuse_rankings_v48126", "api_v1_performance_v48140",
         "reset_all_abuse_data_v48129", "manage_vm_abuse_data_v48129",
     }
     missing = required - set(module.app.view_functions)
@@ -402,6 +416,9 @@ with tempfile.TemporaryDirectory(prefix="bw-monitor-v48129-install-check-") as t
                 raise SystemExit(f"api_keys missing {col}")
         if "vm_abuse_incidents" not in api_tables:
             raise SystemExit("vm_abuse_incidents table is missing")
+        for table in ("vm_disk_summary_current", "node_storage_mount_summary_current"):
+            if table not in api_tables:
+                raise SystemExit(f"{table} is missing")
         abuse_cols = {row[1] for row in conn.execute("PRAGMA table_info(vm_abuse_state)")}
         for col in ("ram_streak_cycles", "ram_rss_percent", "ram_guest_used_percent", "ram_usable_percent"):
             if col not in abuse_cols:
@@ -455,7 +472,7 @@ with tempfile.TemporaryDirectory(prefix="bw-monitor-v48129-install-check-") as t
     cpu_html = module._v48105_cpu_usage_block(799.5, 88.8, 9, compact=True)
     if "cpu-meter" not in cpu_html or "799.5%" not in cpu_html or "88.8% full" not in cpu_html:
         raise SystemExit("CPU meter verification failed")
-    print("Installed app version: 48.12.9")
+    print("Installed app version: 48.14.0 High Performance Edition")
     print("Retention: 2 days raw / one real hourly snapshot through day 7 / hard delete after day 7")
     print("Abuse API Hub / REST v1 / request logs: OK")
     print("Guest RAM formula/schema/compact sorts: OK")
@@ -474,7 +491,7 @@ say "Service status"
 systemctl status "$SERVICE_NAME" --no-pager -l
 
 echo
-echo "BW Monitor v48.12.9-r4 installed successfully."
+echo "BW Monitor v48.14.0-r1 High Performance Edition installed successfully."
 echo "App:      $APP_TARGET"
 echo "Runner:   $RUNNER_TARGET"
 echo "Retention:$RETENTION_RUNNER_TARGET"

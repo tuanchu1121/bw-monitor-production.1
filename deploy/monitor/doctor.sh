@@ -26,6 +26,26 @@ for unit in bw-monitor.service bw-monitor-retention.timer; do
   if systemctl is-active --quiet "$unit"; then ok "$unit is active"; else fail "$unit is not active"; fi
 done
 
+if [[ "${BW_REDIS_ENABLED:-1}" == "1" ]]; then
+  redis_unit=""
+  systemctl list-unit-files redis-server.service >/dev/null 2>&1 && redis_unit="redis-server.service"
+  [[ -n "$redis_unit" ]] || { systemctl list-unit-files redis.service >/dev/null 2>&1 && redis_unit="redis.service"; }
+  if [[ -n "$redis_unit" ]] && systemctl is-active --quiet "$redis_unit"; then
+    ok "$redis_unit is active"
+  else
+    warn 'Redis cache is enabled but its systemd service is not active; local cache fallback will be used'
+  fi
+  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${BW_REDIS_URL:-redis://127.0.0.1:6379/0}" ping 2>/dev/null | grep -qx PONG; then
+    ok 'Redis answered PONG'
+  else
+    warn 'Redis did not answer PING; local cache fallback will be used'
+  fi
+else
+  warn 'Redis hot cache is disabled'
+fi
+
+ok "Performance settings: page-cache=${BW_PAGE_CACHE_ENABLED:-1} ttl=${BW_PAGE_CACHE_TTL:-6}s sqlite-cache=${BW_SQLITE_CACHE_MIB:-256}MiB mmap=${BW_SQLITE_MMAP_MIB:-1024}MiB preload=${BW_GUNICORN_PRELOAD:-1}"
+
 if [[ -x "$APP_DIR/venv/bin/python3" && -f "$APP_DIR/app.py" ]]; then
   if "$APP_DIR/venv/bin/python3" -m py_compile "$APP_DIR/app.py" 2>/tmp/bwm-doctor-compile.err; then
     ok 'Application source compiles'
@@ -46,6 +66,15 @@ if [[ -f "$DB" ]]; then
   ok "Database exists: $DB ($(du -h "$DB" | awk '{print $1}'))"
 else
   fail "Database is missing: $DB"
+fi
+
+if [[ -f "$DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+  perf_counts="$(sqlite3 -readonly "$DB" "SELECT (SELECT COUNT(*) FROM vm_disk_summary_current),(SELECT COUNT(*) FROM node_storage_mount_summary_current);" 2>/dev/null || true)"
+  if [[ "$perf_counts" =~ ^[0-9]+\|[0-9]+$ ]]; then
+    ok "Materialized summaries: VM disks=${perf_counts%%|*}, node mounts=${perf_counts##*|}"
+  else
+    warn 'v48.14.0 materialized summary tables could not be read'
+  fi
 fi
 
 for f in "$ENV_FILE" /root/bw-monitor-credentials.env; do

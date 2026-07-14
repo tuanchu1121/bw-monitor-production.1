@@ -1,8 +1,8 @@
-# BW Monitor v48.13.9-r2 Swap + Top VM Slots Production
+# BW Monitor v48.14.0 High Performance Edition
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **48.13.9-prod-r2-swap-top-slots**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **48.14.0-prod-r1-performance-edition**, built on and preserving the v48.12.9-r4 operational UI and all v48.13.x storage features. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -36,6 +36,53 @@ This repository contains the complete deployment source for **48.13.9-prod-r2-sw
 - The storage dropdown de-duplicates `/`, `/boot`, `/home`, `/home2`, and other mounts across nodes.
 - Default page size is 30 and Storage Node VM/disk counts are batched in one query, removing the previous N+1 query pattern.
 - Purging a UUID also scrubs that UUID from retained compressed Storage snapshots on its affected nodes.
+
+## High Performance Edition (48.14.0)
+
+This release keeps the existing Flask/SQLite deployment model and adds a high-performance data path for large installations without changing the dashboard workflow.
+
+- Redis hot cache for repeated Dashboard, Top VM, VM Abuse, Storage I/O, Node and VM-detail page reads.
+- Process-local LRU fallback when Redis is unavailable.
+- Materialized current summaries for VM disk capacity/I/O and node storage mounts.
+- SQL-side pagination for grouped Storage I/O cards, with child rows loaded only for the visible page.
+- Tuned SQLite WAL connections with memory mapping, a larger page cache, in-memory temporary work and cached statements.
+- Gunicorn preload and four threads per worker by default.
+- RAM-aware SQLite cache/mmap defaults, with existing custom values preserved during updates.
+- The production installer runs the full regression suite once, then reuses that result during the file-install phase.
+- Direct gzip compression and browser off-screen rendering containment.
+- `Server-Timing`, `X-BW-App-Time-Ms` and `X-BW-Performance` response headers.
+- Authenticated `/api/v1/performance` health endpoint.
+
+Redis is installed and enabled automatically by the production installer. Use `--no-redis` only when the host cannot run Redis; the application will continue with a bounded process-local cache. Redis is a cache only, never the source of truth.
+
+Update an existing monitor while keeping the database and credentials:
+
+```bash
+unset HISTFILE
+
+curl -fsSL \
+https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
+| bash -s -- \
+--backup-db
+```
+
+Verify the performance layer after the update:
+
+```bash
+cat /opt/bw-monitor/DEPLOY_VERSION
+redis-cli ping
+systemctl status redis-server --no-pager -l
+grep -E 'BW_REDIS|BW_PAGE_CACHE|BW_SQLITE|BW_GUNICORN_PRELOAD' /etc/default/bw-monitor
+```
+
+Run the bundled synthetic query benchmark from a repository checkout:
+
+```bash
+python3 tools/benchmark-performance.py --vms 50000 --disks-per-vm 2 --queries 200
+```
+
+The benchmark is a local query microbenchmark, not a promise of end-to-end production latency. Real performance also depends on database size, storage latency, active users and browser rendering.
+
 
 ## Architecture
 
@@ -382,6 +429,7 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - [Ansible deployment](docs/ANSIBLE.md)
 - [Operations](docs/OPERATIONS.md)
 - [Database design and checks](docs/DATABASE.md)
+- [Performance architecture and tuning](docs/PERFORMANCE.md)
 - [Audit and diagnostics](docs/AUDIT.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Code guide and architecture](docs/CODE_GUIDE.md)

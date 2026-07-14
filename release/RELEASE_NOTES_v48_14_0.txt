@@ -1,0 +1,34 @@
+BW Monitor 48.14.0-prod-r1-performance-edition
+=================================================
+
+Purpose
+-------
+Scale the existing production monitor to much larger current datasets while preserving the current UI, policies, retention and Agent protocol.
+
+Performance changes
+-------------------
+- Redis shared hot cache with local LRU fallback.
+- Materialized per-VM disk and per-node mount summaries maintained on push.
+- SQL-side pagination for Storage I/O grouped views.
+- Fast SQLite request connections: WAL, NORMAL sync, mmap, larger cache, memory temp store and prepared statement cache.
+- Gunicorn preload and 4 threads per worker.
+- RAM-aware SQLite cache/mmap sizing and one-pass production preflight.
+- Gzip responses and browser content-visibility for off-screen cards.
+- Performance health endpoint and timing headers.
+
+Compatibility
+-------------
+- No Agent reinstall is required for the performance layer.
+- Existing SQLite database, users, credentials, policies, history and UUID purge behavior are preserved.
+- Redis is only a cache; a Redis outage falls back to local cache and SQLite.
+
+Update
+------
+unset HISTFILE
+curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh | bash -s -- --backup-db
+
+Verify
+------
+cat /opt/bw-monitor/DEPLOY_VERSION
+redis-cli ping
+systemctl status bw-monitor redis-server --no-pager -l
