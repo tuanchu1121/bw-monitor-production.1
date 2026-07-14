@@ -205,31 +205,31 @@ def main():
         check("cloud-drive.img" not in vm_html, "auxiliary cloud disk leaked into VM customer disk detail")
 
         # Storage I/O All view: one VM row with all customer disks nested.
-        with mod.app.test_request_context("/storage?view=disks&period=15m&sort=allocated&order=desc&q=167.253.159.3"):
+        with mod.app.test_request_context("/storage?view=disks&period=5m&sort=allocated&order=desc&q=167.253.159.3"):
             disk_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("Search node, IP, UUID, disk, path or mount" in disk_html, "Storage search field is missing")
         check("167.253.159.3" in disk_html and 'data-copy="167.253.159.3"' in disk_html, "node IP/copy is missing")
         check(vm_uuid in disk_html and f'data-copy="{vm_uuid}"' in disk_html, "UUID/copy is missing")
-        check("VIEW: GROUPED BY UUID" in disk_html and "storage-vm-group-row" in disk_html, "VM Disks All view is not grouped by UUID")
+        check("storage-vm-card" in disk_html and "One VM card" in disk_html, "VM Disks All view is not grouped by UUID")
         check("vda" in disk_html and "vdb" in disk_html and disk_html.count("storage-child-item") >= 2, "grouped VM row does not contain all disks")
         check("cloud-drive.img" not in disk_html, "auxiliary disk leaked into grouped VM disks")
 
         # Selecting a storage mount switches to one matching disk per row.
-        with mod.app.test_request_context("/storage?view=disks&period=15m&node=UT-Storage-1&mount=/home2&sort=writeiops&order=desc"):
+        with mod.app.test_request_context("/storage?view=disks&period=5m&node=UT-Storage-1&mount=/home2&sort=writeiops&order=desc"):
             filtered_disk_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("FILTERED STORAGE: /home2" in filtered_disk_html, "filtered storage mode banner is missing")
         check("storage-single-disk-row" in filtered_disk_html and "vdb" in filtered_disk_html, "filtered storage mode is not one disk per row")
 
         # Storage Node All view groups all real mounts under one node.
-        with mod.app.test_request_context("/storage?view=nodes&period=15m&q=home"):
+        with mod.app.test_request_context("/storage?view=nodes&period=5m&q=home"):
             node_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("Storage Node" in node_html and "Storage Backends" not in node_html, "Storage Backends was not renamed")
-        check("VIEW: GROUPED BY NODE" in node_html and "storage-node-group-row" in node_html, "Storage Node All view is not grouped by node")
+        check("storage-node-card" in node_html and "One node card" in node_html, "Storage Node All view is not grouped by node")
         check("/home" in node_html and "/dev/mapper/storage-home" in node_html and "200.00 TiB" in node_html, "separate /home storage is missing or incorrectly collapsed into /")
         check("/home2" in node_html and "167.253.159.3" in node_html, "grouped Storage Node is missing a child mount or IP")
 
         # Selecting a filesystem keeps the direct matching-mount table.
-        with mod.app.test_request_context("/storage?view=nodes&period=15m&node=UT-Storage-1&mount=/home"):
+        with mod.app.test_request_context("/storage?view=nodes&period=5m&node=UT-Storage-1&mount=/home"):
             filtered_node_html = response_html(mod.app.view_functions["storage_io_page"]())
         check("FILTERED FILESYSTEM: /home" in filtered_node_html, "filtered filesystem mode banner is missing")
 

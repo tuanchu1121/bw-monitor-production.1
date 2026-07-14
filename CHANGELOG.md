@@ -1,5 +1,15 @@
 # Changelog
 
+## 48.13.7-prod-r1-storage-history-cards
+
+- Added real retained Storage I/O snapshots to the existing `node_push_snapshots` retention rows using compact zlib-compressed payloads.
+- Made `5m` the fast live path and changed `10m` through `7d` to open the real retained point at that age instead of merely widening a freshness filter.
+- Added the shared Custom Snapshot Time picker and exact nearest-retained-push behavior to Storage I/O.
+- Replaced the very wide grouped tables with readable VM cards and node cards while preserving sortable one-disk-per-row and one-mount-per-row filtered views.
+- De-duplicated storage mount options across nodes, reduced the default page size to 30, and removed the Storage Node N+1 VM-count query.
+- Extended exact UUID purge to scrub the UUID from retained compressed Storage snapshots on affected nodes.
+- Preserved the existing Dashboard, Top VM, Abuse, Node Health, Admin, RAM/CPU, per-disk VM detail, `/home` visibility, and Agent v12 behavior.
+
 ## 48.13.6-prod-r1-storage-grouped
 
 - Fixed Top VM `ALLOC`, `ASSIGNED`, and `%` sorting by allowing the new disk sort keys through the final request sanitizer.

@@ -1,0 +1,24 @@
+BW Monitor 48.13.7-prod-r1-storage-history-cards
+
+Storage I/O time behavior
+- 5m uses the fast live current tables.
+- 10m, 15m, 30m, 1h, 2h, 6h, 12h, 24h, 2d and 7d open a real retained storage snapshot at that age.
+- Custom Snapshot Time opens the nearest retained real Agent push at or before the selected local time.
+- Historical Storage data begins accumulating after this release is installed; older rows created before v48.13.7 do not contain a Storage payload.
+
+Storage retention
+- One compact zlib-compressed payload is stored on each retained node_push_snapshots row.
+- The existing bounded policy applies automatically: full real 5-minute pushes for 48 hours, hourly retained pushes through day seven, then deletion.
+- No unbounded per-disk history table is introduced.
+
+UI and performance
+- VM Disks All view uses one VM card with every disk nested under its UUID.
+- Storage Node All view uses one node card with every real filesystem nested inside.
+- Selecting a mount keeps the forensic sortable row view.
+- Mount dropdown values are unique across nodes.
+- Default rows are reduced from 100 to 30.
+- Storage Node VM/disk counts are loaded in one grouped query instead of one query per node.
+
+Cleanup
+- Purging one UUID still removes only that UUID from current/history/Abuse data.
+- The UUID is also removed from retained compressed Storage payloads on affected nodes.

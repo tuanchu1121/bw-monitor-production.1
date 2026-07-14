@@ -1,10 +1,21 @@
-# BW Monitor v48.13.6-r1 Grouped Storage Production
+# BW Monitor v48.13.7-r1 Retained Storage Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor 48.13.6-prod-r1-storage-grouped**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor 48.13.7-prod-r1-storage-history-cards**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
+
+
+### Retained Storage snapshots and compact cards (48.13.7-r1)
+
+- `Storage I/O` now has the same exact-time picker used by Dashboard, Top VM, Node and VM pages.
+- `5m` is the fast live/current path; `10m` through `7d` open a real retained storage point at that age.
+- Per-node Storage payloads are compressed into the existing `node_push_snapshots` rows, so they inherit the bounded 2-day raw / 7-day hourly retention policy without a huge per-disk history table.
+- `VM Disks` All view is rendered as one readable VM card with every customer disk inside; `Storage Node` All view is one node card with every real filesystem inside. Selecting a mount keeps the direct one-disk-per-row or one-mount-per-row forensic view.
+- The storage dropdown de-duplicates `/`, `/boot`, `/home`, `/home2`, and other mounts across nodes.
+- Default page size is 30 and Storage Node VM/disk counts are batched in one query, removing the previous N+1 query pattern.
+- Purging a UUID also scrubs that UUID from retained compressed Storage snapshots on its affected nodes.
 
 ## Architecture
 
@@ -338,7 +349,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.6-prod-r1`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.7-prod-r1`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
