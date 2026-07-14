@@ -26739,3 +26739,506 @@ def storage_io_page_v48138():
 
 
 app.view_functions["storage_io_page"] = storage_io_page_v48138
+
+# ---------------------------------------------------------------------------
+# v48.13.9 - compact Abuse disk capacity + clearer Storage cards
+# ---------------------------------------------------------------------------
+V48139_VERSION = "48.13.9"
+V48139_BUILD = "r1"
+
+V48139_UI_CSS = r'''
+<style id="v48139-abuse-storage-cards">
+/* Current Abuse: add one compact disk-capacity column without changing the rest. */
+.abuse-current-v48139{min-width:2380px!important}
+.abuse-current-v48139 th:nth-child(1){width:42px!important}
+.abuse-current-v48139 th:nth-child(2){width:292px!important}
+.abuse-current-v48139 th:nth-child(3){width:370px!important}
+.abuse-current-v48139 th:nth-child(4){width:235px!important}
+.abuse-current-v48139 th:nth-child(5){width:250px!important}
+.abuse-current-v48139 th:nth-child(6){width:195px!important}
+.abuse-current-v48139 th:nth-child(7){width:280px!important}
+.abuse-current-v48139 th:nth-child(8){width:205px!important}
+.abuse-current-v48139 th:nth-child(9){width:235px!important}
+.abuse-current-v48139 th:nth-child(10){width:165px!important}
+.abuse-disk-capacity{min-width:0;text-align:left}
+.abuse-disk-capacity .resource-primary{font-size:14px!important}
+.abuse-disk-capacity .resource-context{justify-content:flex-start}
+.abuse-disk-capacity .resource-foot{text-align:left!important}
+.abuse-disk-capacity.resource-na .resource-primary{color:#98a2b3!important}
+
+/* Storage cards: one strong VM/Node card, clear sections, compact disk rows. */
+.storage-card-list-v48139{display:grid;gap:14px}
+.storage-entity-card-v48139{border:2px solid #cbd5e1;border-radius:15px;background:#fff;overflow:hidden;box-shadow:0 2px 7px rgba(15,23,42,.045)}
+.storage-entity-card-v48139+.storage-entity-card-v48139{margin-top:2px}
+.storage-entity-head-v48139{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:2px solid #dbe4ee;background:linear-gradient(180deg,#f8fbff,#f4f7fb)}
+.storage-entity-id-v48139{min-width:0;flex:1}
+.storage-entity-id-v48139 .entity-kicker{display:block;font-size:8px;font-weight:950;letter-spacing:.08em;color:#667085;text-transform:uppercase}
+.storage-entity-id-v48139 .entity-main{display:flex;align-items:center;gap:7px;min-width:0;margin-top:3px}
+.storage-entity-id-v48139 .entity-main>a{font-size:14px;font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#175cd3}
+.storage-entity-id-v48139 .entity-context{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px;font-size:9px;color:#667085}
+.storage-entity-id-v48139 .entity-context a{font-weight:850}
+.storage-entity-actions-v48139{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.storage-entity-actions-v48139 .btn{padding:7px 10px!important;font-size:9px!important}
+.storage-overview-v48139{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(360px,1fr);gap:12px;padding:14px 16px;border-bottom:1px solid #e5eaf0}
+.storage-section-box-v48139{border:1px solid #dbe3ec;border-radius:12px;padding:12px;background:#fff}
+.storage-section-label-v48139{display:block;font-size:9px;font-weight:950;letter-spacing:.065em;color:#667085;text-transform:uppercase}
+.storage-overall-value-v48139{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin-top:6px}
+.storage-overall-value-v48139 b{font-size:18px;line-height:1}
+.storage-overall-value-v48139 span{font-size:10px;color:#667085;font-weight:800}
+.storage-cap-track-v48139{height:8px;margin-top:10px;border-radius:999px;background:#e5e7eb;overflow:hidden}
+.storage-cap-track-v48139>i{display:block;height:100%;border-radius:inherit;background:#12b76a}
+.storage-cap-warm-v48139>i{background:#fdb022}.storage-cap-hot-v48139>i{background:#f79009}.storage-cap-critical-v48139>i{background:#f04438}
+.storage-perf-grid-v48139{display:grid;grid-template-columns:repeat(3,minmax(88px,1fr));gap:8px;margin-top:7px}
+.storage-perf-grid-v48139>div{padding:9px 10px;border-left:3px solid #dbe4ee;background:#f8fafc;border-radius:7px}
+.storage-perf-grid-v48139 span{display:block;font-size:8px;font-weight:950;letter-spacing:.05em;color:#667085}
+.storage-perf-grid-v48139 b{display:block;margin-top:4px;font-size:11px;white-space:nowrap}
+.storage-children-v48139{padding:14px 16px 16px}
+.storage-children-title-v48139{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+.storage-children-title-v48139 h4{margin:0;font-size:12px}
+.storage-children-title-v48139 span{font-size:9px;color:#667085}
+.storage-disk-row-v48139,.storage-mount-row-v48139{display:grid;grid-template-columns:minmax(245px,1.05fr) minmax(300px,1.25fr) minmax(360px,1.5fr);gap:14px;align-items:center;padding:12px 10px;border-top:1px solid #dbe3ec}
+.storage-disk-row-v48139:first-child,.storage-mount-row-v48139:first-child{border-top:2px solid #94a3b8}
+.storage-disk-id-v48139{min-width:0}
+.storage-disk-id-v48139 .disk-title{display:flex;align-items:center;gap:8px;min-width:0}
+.storage-disk-id-v48139 .disk-title b{font-size:14px}
+.storage-disk-id-v48139 .disk-title span{font-size:9px;color:#475467;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-disk-id-v48139 code{display:block;margin-top:5px;font-size:8.5px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-row-cap-v48139 b{font-size:12px}.storage-row-cap-v48139 small{display:block;margin-top:4px;font-size:9px;color:#667085}
+.storage-row-cap-v48139 .storage-cap-track-v48139{height:6px;margin-top:7px}
+.storage-row-perf-v48139{display:grid;grid-template-columns:repeat(3,minmax(82px,1fr));gap:8px}
+.storage-row-perf-v48139>div{padding-left:9px;border-left:1px solid #dbe3ec;min-width:0}
+.storage-row-perf-v48139 span{display:block;font-size:8px;font-weight:950;color:#667085}
+.storage-row-perf-v48139 b{display:block;margin-top:3px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-card-empty-v48139{padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#667085;text-align:center}
+.storage-entity-card-v48139 .copy-btn{flex:0 0 auto}
+html[data-theme=dark] .storage-entity-card-v48139,html[data-theme=dark] .storage-section-box-v48139{background:#0f1b2c;border-color:#31445e}
+html[data-theme=dark] .storage-entity-head-v48139{background:linear-gradient(180deg,#142238,#101c2d);border-bottom-color:#31445e}
+html[data-theme=dark] .storage-overview-v48139,html[data-theme=dark] .storage-disk-row-v48139,html[data-theme=dark] .storage-mount-row-v48139{border-color:#31445e}
+html[data-theme=dark] .storage-perf-grid-v48139>div{background:#132238;border-left-color:#3b4f6a}
+html[data-theme=dark] .storage-cap-track-v48139{background:#334155}
+html[data-theme=dark] .storage-entity-id-v48139 .entity-kicker,html[data-theme=dark] .storage-entity-id-v48139 .entity-context,html[data-theme=dark] .storage-section-label-v48139,html[data-theme=dark] .storage-overall-value-v48139 span,html[data-theme=dark] .storage-perf-grid-v48139 span,html[data-theme=dark] .storage-children-title-v48139 span,html[data-theme=dark] .storage-disk-id-v48139 .disk-title span,html[data-theme=dark] .storage-disk-id-v48139 code,html[data-theme=dark] .storage-row-cap-v48139 small,html[data-theme=dark] .storage-row-perf-v48139 span{color:#9fb0c4}
+@media(max-width:1180px){.storage-overview-v48139{grid-template-columns:1fr}.storage-disk-row-v48139,.storage-mount-row-v48139{grid-template-columns:1fr 1fr}.storage-row-perf-v48139{grid-column:1/-1}}
+@media(max-width:760px){.storage-entity-head-v48139{flex-direction:column}.storage-entity-actions-v48139{justify-content:flex-start}.storage-disk-row-v48139,.storage-mount-row-v48139{grid-template-columns:1fr}.storage-row-perf-v48139,.storage-perf-grid-v48139{grid-template-columns:1fr 1fr}}
+</style>
+'''
+
+
+def _v48139_cap_level(pct):
+    pct = max(0.0, safe_float(pct, 0.0))
+    if pct >= 90:
+        return "storage-cap-critical-v48139"
+    if pct >= 75:
+        return "storage-cap-hot-v48139"
+    if pct >= 50:
+        return "storage-cap-warm-v48139"
+    return ""
+
+
+def _v48139_capacity_bar(used, size, suffix="allocated / assigned"):
+    used = max(0, safe_int(used, 0))
+    size = max(0, safe_int(size, 0))
+    pct = (used * 100.0 / size) if size > 0 else 0.0
+    level = _v48139_cap_level(pct)
+    return (
+        f'<div class="storage-row-cap-v48139">'
+        f'<b>{_disk_io_bytes(used)} / {_disk_io_bytes(size)}</b>'
+        f'<small>{pct:.1f}% · {escape(suffix)}</small>'
+        f'<div class="storage-cap-track-v48139 disk-cap-meter {level}"><i style="width:{min(100.0,pct):.1f}%"></i></div>'
+        f'</div>'
+    )
+
+
+def _v48139_abuse_disk_capacity(allocated, assigned, slots, selected=""):
+    allocated = max(0, safe_int(allocated, 0))
+    assigned = max(0, safe_int(assigned, 0))
+    slots = max(0, safe_int(slots, 0))
+    if slots <= 0 and allocated <= 0 and assigned <= 0:
+        return '<div class="resource-block abuse-disk-capacity resource-na"><b class="resource-primary">N/A</b><small class="resource-foot">No customer disk data</small></div>'
+    pct = allocated * 100.0 / assigned if assigned > 0 else 0.0
+    level = _v48129_level(pct)
+    labels = {
+        "diskallocated": "Allocated", "diskassigned": "Assigned",
+        "diskallocpct": "Allocated %", "diskslots": "Disk slots",
+    }
+    return f'''
+    <div class="resource-block abuse-disk-capacity resource-{level}" title="Sorted by {escape(labels.get(selected,'Disk capacity'),quote=True)}">
+      <b class="resource-primary">{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b>
+      <div class="resource-context"><b>{pct:.1f}% allocated</b></div>
+      <span class="resource-meter"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></span>
+      <small class="resource-foot">{slots} disk slot{'s' if slots != 1 else ''}</small>
+    </div>'''
+
+
+# Preserve the v48.12.9 operations query contract, only adding one aggregated
+# disk-capacity join and four opt-in sort keys.
+def _v48139_current_rows(values):
+    cfg = get_abuse_settings()
+    where = [
+        "a.is_abuse=1", "a.last_seen>=?", "a.policy_revision=?", "a.engine_version=?",
+        _v48126_visible_sql("ni", "vi"), _v48126_type_condition("a", values["type"]), "a.severity>=?",
+    ]
+    params = [now_ts() - FAST_CURRENT_STALE_SECONDS, cfg["revision"], ABUSE_ENGINE_VERSION, values["min_severity"]]
+    if values["node"]:
+        where.append("a.node=?")
+        params.append(values["node"])
+    if values["q"]:
+        pattern = like_pattern(values["q"])
+        where.append("(a.node LIKE ? OR a.vm_uuid LIKE ? OR a.abuse_flags LIKE ?)")
+        params.extend([pattern, pattern, pattern])
+
+    sort = values.get("sort") or "severity"
+    order = values.get("order") or "desc"
+    sort_map = {
+        "node": "a.node COLLATE NOCASE", "uuid": "a.vm_uuid COLLATE NOCASE", "type": "a.abuse_flags COLLATE NOCASE",
+        "severity": "a.severity", "rx_mbps": "COALESCE(a.rx_mbps,0)", "tx_mbps": "COALESCE(a.tx_mbps,0)",
+        "rx_peak": "COALESCE(a.rx_peak_pps,0)", "tx_peak": "COALESCE(a.tx_peak_pps,0)",
+        "cpu": "COALESCE(a.cpu_full_percent,0)", "cpucore": "COALESCE(a.cpu_core_percent,0)",
+        "ram": "COALESCE(a.ram_guest_used_percent,-1)",
+        "ramused": "CASE WHEN COALESCE(a.ram_guest_used_percent,-1)>=0 THEN MAX(0,COALESCE(a.ram_available_kib,0)-COALESCE(a.ram_usable_kib,0)) ELSE -1 END",
+        "ramrss": "COALESCE(a.ram_rss_kib,0)", "ramassigned": "COALESCE(a.ram_current_kib,0)",
+        "diskallocated": "COALESCE(ds.disk_allocated,0)", "diskassigned": "COALESCE(ds.disk_assigned,0)",
+        "diskallocpct": "CASE WHEN COALESCE(ds.disk_assigned,0)>0 THEN COALESCE(ds.disk_allocated,0)*1.0/ds.disk_assigned ELSE -1 END",
+        "diskslots": "COALESCE(ds.disk_slots,0)",
+        "diskr": "COALESCE(a.disk_read_bps,0)", "diskw": "COALESCE(a.disk_write_bps,0)",
+        "readiops": "COALESCE(a.disk_read_iops,0)", "writeiops": "COALESCE(a.disk_write_iops,0)",
+        "last_seen": "a.last_seen",
+    }
+    if sort == "duration":
+        order_sql = f"a.abuse_since {'ASC' if order == 'desc' else 'DESC'}"
+    else:
+        expression = sort_map.get(sort, sort_map["severity"])
+        order_sql = f"{expression} {'ASC' if order == 'asc' else 'DESC'}"
+    where_sql = " AND ".join(where)
+    offset = (values["page"] - 1) * values["limit"]
+    conn = db()
+    try:
+        ensure_disk_io_schema(conn)
+        total = safe_int(conn.execute(f"""SELECT COUNT(*) FROM vm_abuse_state a
+            LEFT JOIN node_inventory ni ON ni.node=a.node
+            LEFT JOIN vm_inventory vi ON vi.node=a.node AND vi.vm_uuid=a.vm_uuid
+            WHERE {where_sql}""", params).fetchone()[0], 0)
+        rows = conn.execute(f"""
+            SELECT a.node,a.vm_uuid,a.abuse_since,a.last_seen,a.abuse_flags,a.severity,
+                   a.rx_mbps,a.tx_mbps,a.rx_pps,a.tx_pps,a.rx_peak_pps,a.tx_peak_pps,
+                   a.seconds_over_rx_pps,a.seconds_over_tx_pps,
+                   COALESCE(a.network_rx_mbps_streak_seconds,0),COALESCE(a.network_tx_mbps_streak_seconds,0),
+                   a.cpu_full_percent,a.cpu_core_percent,a.vcpu_current,a.cpu_streak_seconds,
+                   a.ram_rss_percent,a.ram_guest_used_percent,a.ram_usable_percent,a.ram_streak_seconds,
+                   a.ram_current_kib,a.ram_rss_kib,a.ram_available_kib,a.ram_usable_kib,
+                   a.disk_read_bps,a.disk_write_bps,a.disk_read_iops,a.disk_write_iops,a.disk_streak_seconds,
+                   COALESCE(b.primary_ipv4,''),COALESCE(ds.disk_allocated,0),COALESCE(ds.disk_assigned,0),COALESCE(ds.disk_slots,0)
+            FROM vm_abuse_state a
+            LEFT JOIN node_inventory ni ON ni.node=a.node
+            LEFT JOIN vm_inventory vi ON vi.node=a.node AND vi.vm_uuid=a.vm_uuid
+            LEFT JOIN node_bridge_addresses_latest b ON b.node=a.node AND b.bridge=?
+            LEFT JOIN (
+              SELECT node,vm_uuid,COALESCE(SUM(allocation_bytes),0) AS disk_allocated,
+                     COALESCE(SUM(capacity_bytes),0) AS disk_assigned,COUNT(*) AS disk_slots
+              FROM vm_disk_current WHERE role='customer' GROUP BY node,vm_uuid
+            ) ds ON ds.node=a.node AND ds.vm_uuid=a.vm_uuid
+            WHERE {where_sql}
+            ORDER BY {order_sql},a.node COLLATE NOCASE,a.vm_uuid COLLATE NOCASE
+            LIMIT ? OFFSET ?
+        """, [PUBLIC_BRIDGE] + params + [values["limit"], offset]).fetchall()
+        counts = {}
+        for key in ("network", "cpu", "ram", "disk"):
+            counts[key] = safe_int(conn.execute(f"""SELECT COUNT(*) FROM vm_abuse_state a
+              LEFT JOIN node_inventory ni ON ni.node=a.node
+              LEFT JOIN vm_inventory vi ON vi.node=a.node AND vi.vm_uuid=a.vm_uuid
+              WHERE a.is_abuse=1 AND a.last_seen>=? AND a.policy_revision=? AND a.engine_version=?
+                AND {_v48126_visible_sql('ni','vi')} AND {_v48126_type_condition('a', key)}""",
+              (now_ts()-FAST_CURRENT_STALE_SECONDS, cfg["revision"], ABUSE_ENGINE_VERSION)).fetchone()[0], 0)
+        return rows, total, counts
+    finally:
+        conn.close()
+
+
+def _v48139_current_page(values):
+    cfg = get_abuse_settings()
+    rows, total, counts = _v48139_current_rows(values)
+    body = ""
+    rank_start = (values["page"] - 1) * values["limit"]
+    for index, row in enumerate(rows, 1):
+        (
+            node, uuid, started, last_seen, flags, stored_severity,
+            rxm, txm, rxp, txp, rxpk, txpk, rx_high, tx_high, rx_mbps_streak, tx_mbps_streak,
+            cpu, core, vcpu, cpu_streak, rss_pct, guest_pct, usable_pct, ram_streak,
+            ram_current, ram_rss, ram_available, ram_usable,
+            dr, dw, dri, dwi, disk_streak, ip, disk_allocated, disk_assigned, disk_slots,
+        ) = row
+        href = url_for("node_page", node=node, period="1h", q=uuid)
+        record = {
+            "abuse_flags": flags, "severity": stored_severity,
+            "rx_mbps": rxm, "tx_mbps": txm, "rx_pps": rxp, "tx_pps": txp,
+            "cpu_full_percent": cpu, "ram_rss_percent": rss_pct,
+            "ram_guest_used_percent": guest_pct, "ram_usable_percent": usable_pct,
+            "disk_read_bps": dr, "disk_write_bps": dw,
+            "disk_read_iops": dri, "disk_write_iops": dwi,
+        }
+        network_need = max(1, safe_int(cfg.get("network_mbps_required_seconds"), 300))
+        pps_need = max(1, safe_int(cfg.get("network_required_seconds"), 270))
+        abuse_groups = _v48129_abuse_groups(flags)
+        network_avg_time = _v48129_metric_abuse_time(started, "network", abuse_groups["network_avg"])
+        network_pps_time = _v48129_metric_abuse_time(started, "network", abuse_groups["network_pps"])
+        cpu_time = _v48129_metric_abuse_time(started, "cpu", abuse_groups["cpu"])
+        ram_time = _v48129_metric_abuse_time(started, "ram", abuse_groups["ram"])
+        disk_time = _v48129_metric_abuse_time(started, "disk", abuse_groups["disk"])
+        body += f"""<tr>
+          <td class="rank-cell">{rank_start + index}</td>
+          <td class="identity-cell"><div class="node-line"><a href="{escape(href, quote=True)}"><b>{escape(node)}</b></a>{f'<span>{escape(compact_ipv4(ip))}</span>' if ip else ''}</div><div class="uuid-line"><a class="mono" href="{escape(href, quote=True)}">{escape(uuid)}</a><button type="button" class="copy-btn" data-copy="{escape(uuid, quote=True)}" title="Copy UUID">⧉</button></div></td>
+          <td class="reason-cell-v48129">{_v48129_reason_cell(record,cfg,started)}</td>
+          <td><div class="metric-pair metric-pair-rich"><div><span>RX AVG</span><b>{safe_float(rxm,0):.2f} Mbps</b><small>{_v48126_duration(rx_mbps_streak)} / {_v48126_duration(network_need)} sustained</small></div><div><span>TX AVG</span><b>{safe_float(txm,0):.2f} Mbps</b><small>{_v48126_duration(tx_mbps_streak)} / {_v48126_duration(network_need)} sustained</small></div></div>{network_avg_time}</td>
+          <td><div class="metric-pair metric-pair-rich"><div><span>RX PEAK</span><b>{fmt_pps_value(rxpk)} PPS</b><small>{safe_int(rx_high,0)}/300s high · need {pps_need}s</small></div><div><span>TX PEAK</span><b>{fmt_pps_value(txpk)} PPS</b><small>{safe_int(tx_high,0)}/300s high · need {pps_need}s</small></div></div>{network_pps_time}</td>
+          <td>{_v48129_cpu_block(core,cpu,vcpu,cpu_streak,cfg.get('cpu_required_seconds',1800),values.get('sort'),cpu_time)}</td>
+          <td>{_v48129_ram_block(ram_current,ram_rss,ram_available,ram_usable,guest_pct,values.get('sort'),ram_time)}</td>
+          <td>{_v48139_abuse_disk_capacity(disk_allocated,disk_assigned,disk_slots,values.get('sort'))}</td>
+          <td><div class="metric-pair metric-pair-rich"><div class="{'selected' if values.get('sort') in {'diskr','readiops'} else ''}"><span>READ</span><b>{human_rate(dr)}</b><small>{safe_float(dri,0):,.0f} IOPS</small></div><div class="{'selected' if values.get('sort') in {'diskw','writeiops'} else ''}"><span>WRITE</span><b>{human_rate(dw)}</b><small>{safe_float(dwi,0):,.0f} IOPS</small></div></div>{disk_time}</td>
+          <td><div class="timeline-cell"><b>{fmt_full(last_seen)}</b><small>{fmt_push(last_seen)}</small></div></td>
+        </tr>"""
+    if not body:
+        body = '<tr><td colspan="10" class="empty">No visible VM matches the selected Current Abuse filters</td></tr>'
+    pages = max(1, math.ceil(total / values["limit"]))
+    h = lambda label, key, default="desc": _v48127_sort_link("current", values, key, label, default)
+    ram_header = _v48128_group_sort_header("RAM", [
+        ("Guest %", "ram", h("Guest %", "ram")), ("Used GiB", "ramused", h("Used GiB", "ramused")),
+        ("Host RSS", "ramrss", h("Host RSS", "ramrss")), ("Assigned", "ramassigned", h("Assigned", "ramassigned")),
+    ], values["sort"], values["order"])
+    disk_cap_header = _v48128_group_sort_header("ALLOCATED / ASSIGNED", [
+        ("Alloc", "diskallocated", h("ALLOC", "diskallocated")),
+        ("Assigned", "diskassigned", h("ASSIGNED", "diskassigned")),
+        ("%", "diskallocpct", h("%", "diskallocpct")),
+        ("Slots", "diskslots", h("SLOTS", "diskslots")),
+    ], values["sort"], values["order"])
+    headers = (
+        '<th>#</th>'
+        f'<th>{h("NODE / VM","node","asc")}</th>'
+        f'<th>{h("REASON / SEVERITY","severity")}</th>'
+        f'<th>{_v48129_group_header("NETWORK AVG", [("RX Mbps","rx_mbps","desc"),("TX Mbps","tx_mbps","desc")], values)}</th>'
+        f'<th>{_v48129_group_header("PPS PEAK / WINDOW", [("RX PPS","rx_peak","desc"),("TX PPS","tx_peak","desc")], values)}</th>'
+        f'<th>{_v48129_group_header("CPU", [("Full %","cpu","desc"),("Core %","cpucore","desc")], values)}</th>'
+        f'<th class="ram-compact-sort-head">{ram_header}</th>'
+        f'<th>{disk_cap_header}</th>'
+        f'<th>{_v48129_group_header("DISK I/O", [("Read","diskr","desc"),("Write","diskw","desc"),("Read IOPS","readiops","desc"),("Write IOPS","writeiops","desc")], values)}</th>'
+        f'<th>{h("LAST SEEN","last_seen")}</th>'
+    )
+    return f"""
+    {V48139_UI_CSS}
+    <div class="abuse-kpis-v48126"><div><span>Filtered</span><b>{total}</b></div><div><span>Network</span><b>{counts['network']}</b></div><div><span>CPU</span><b>{counts['cpu']}</b></div><div><span>RAM</span><b>{counts['ram']}</b></div><div><span>Disk</span><b>{counts['disk']}</b></div></div>
+    <div class="card"><div class="section-head"><div><h3>Current VM Abuse</h3><p>Original Abuse operations table plus compact disk capacity. ALLOC, ASSIGNED, %, and disk slots are independently sortable.</p></div><div class="count-badges"><span>All <b>{total}</b></span><span>Page <b>{values['page']}/{pages}</b></span><span>Policy <b>v{cfg['revision']}</b></span></div></div>
+    <div class="table-wrap"><table class="abuse-current-v48129 abuse-current-v48139"><thead><tr>{headers}</tr></thead><tbody>{body}</tbody></table></div>
+    <div class="table-hint"><b>DISK CAPACITY:</b> Host Allocated / Assigned across customer disks. SLOTS is the number of attached customer disks. Existing Abuse policy and I/O logic are unchanged.</div>
+    {_v48126_pagination('current', values, total)}</div>"""
+
+
+def vm_abuse_page_v48139():
+    tab = (request.args.get("tab") or "current").strip().lower()
+    if tab in {"history", "incidents", "summary", "events", "raw", "raw-events"}:
+        tab = "events"
+    if tab not in {"current", "events"}:
+        tab = "current"
+    values = _v48128_filter_values()
+    if tab == "events":
+        values["limit"] = min(values["limit"], 200)
+    current_sorts = {
+        "node", "uuid", "type", "severity", "rx_mbps", "tx_mbps", "rx_peak", "tx_peak",
+        "cpu", "cpucore", "ram", "ramused", "ramrss", "ramassigned",
+        "diskallocated", "diskassigned", "diskallocpct", "diskslots",
+        "diskr", "diskw", "readiops", "writeiops", "duration", "last_seen",
+    }
+    event_sorts = {"node", "uuid", "occurrences", "active", "duration", "longest", "severity", "last_seen"}
+    if tab == "current" and values["sort"] not in current_sorts:
+        values["sort"] = "severity"
+    if tab == "events" and values["sort"] not in event_sorts:
+        values["sort"] = "occurrences"
+    nodes = _v48126_visible_nodes()
+    cfg = get_abuse_settings()
+    content = f"""<div class="card page-hero"><div><span class="eyebrow">VM ABUSE</span><h2>Abuse Monitor</h2><p>Current Abuse is a full operations table. Abuse Events groups repeat occurrences by VM with exact start, end and duration.</p></div><div class="hero-meta"><span>Policy <b>v{cfg['revision']}</b></span><span>Engine <b>{ABUSE_ENGINE_VERSION}</b></span><span>Retention <b>7 days</b></span></div></div>
+    <div class="card abuse-toolbar abuse-toolbar-v48128">{_v48127_tabs(tab)}{_v48128_filter_form(tab, values, nodes)}</div>
+    <details class="card policy-fold"><summary>Current policy</summary>{_public_abuse_policy(cfg)}</details>"""
+    content += _v48139_current_page(values) if tab == "current" else _v48129_events_page(values)
+    return page("VM Abuse", content)
+
+
+# Keep the historical function name for old regression contracts while using
+# the v48.13.9 implementation.
+vm_abuse_page_v48139.__name__ = "vm_abuse_page_v48129"
+app.view_functions["vm_abuse_page"] = vm_abuse_page_v48139
+
+
+def _v48139_vm_disk_row(node, vm_uuid, row, values):
+    target, source, mount, device, block, fstype, assigned, allocated, rb, wb, ri, wi, seen = row
+    dev = device or (("/dev/" + block) if block else "-")
+    filter_href = _storage_io_url(
+        values, view="disks", node=node, mount=mount or "", q=vm_uuid,
+        sort="writeiops", order="desc", page=1,
+    )
+    iops_text = f'R {_disk_io_iops(ri)} / W {_disk_io_iops(wi)}'
+    return f'''
+    <div class="storage-child-item storage-disk-row-v48139">
+      <div class="storage-disk-id-v48139">
+        <div class="disk-title"><b>{escape(target or '-')}</b><span>{escape(mount or '-')} · {escape(dev)}</span></div>
+        <code title="{escape(source or '-',quote=True)}">{escape(source or '-')}</code>
+      </div>
+      {_v48139_capacity_bar(allocated,assigned)}
+      <div class="storage-row-perf-v48139">
+        <div><span>READ</span><b>{_disk_io_rate(rb)}</b></div>
+        <div><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div>
+        <div><span>IOPS</span><b>{iops_text}</b></div>
+      </div>
+    </div>'''
+
+
+def _v48139_storage_disk_group_cards(conn, values, start_ts):
+    groups, details, total = _v48133_storage_disk_groups(conn, values, start_ts)
+    cards = []
+    for node, vm_uuid, public_ip, disk_count, assigned, allocated, rb, wb, ri, wi, seen in groups:
+        ip = compact_ipv4(public_ip)
+        node_href = url_for("node_page", node=node, period=values["period"], q=vm_uuid, **({"at": values.get("at")} if values.get("at") else {}))
+        vm_href = url_for("vm_page", node=node, vm_uuid=vm_uuid, period=values["period"], **({"at": values.get("at")} if values.get("at") else {}))
+        disk_rows = "".join(_v48139_vm_disk_row(node, vm_uuid, row, values) for row in details.get((str(node), str(vm_uuid)), []))
+        pct = allocated * 100.0 / assigned if safe_int(assigned,0) > 0 else 0.0
+        level = _v48139_cap_level(pct)
+        cards.append(f'''
+        <article class="storage-vm-card storage-entity-card-v48139">
+          <div class="storage-entity-head-v48139">
+            <div class="storage-vm-identity storage-entity-id-v48139">
+              <span class="entity-kicker">VM UUID</span>
+              <div class="entity-main"><a href="{escape(vm_href,quote=True)}" title="{escape(vm_uuid,quote=True)}">{escape(vm_uuid)}</a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></div>
+              <div class="entity-context"><span>Node</span><a href="{escape(node_href,quote=True)}">{escape(node)}</a>{f'<span>{escape(ip)}</span><button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button>' if ip else ''}<span>· {safe_int(disk_count,0)} disk{'s' if safe_int(disk_count,0)!=1 else ''}</span><span>· sample {fmt_push(seen)}</span></div>
+            </div>
+            <div class="storage-entity-actions-v48139"><a class="btn" href="{escape(vm_href,quote=True)}">View details</a></div>
+          </div>
+          <div class="storage-overview-v48139">
+            <div class="storage-section-box-v48139">
+              <span class="storage-section-label-v48139">Overall</span>
+              <div class="storage-overall-value-v48139"><b>{_disk_io_bytes(allocated)} / {_disk_io_bytes(assigned)}</b><span>{pct:.1f}% allocated / assigned</span></div>
+              <div class="storage-cap-track-v48139 disk-cap-meter {level}"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></div>
+            </div>
+            <div class="storage-section-box-v48139">
+              <span class="storage-section-label-v48139">Performance</span>
+              <div class="storage-perf-grid-v48139"><div><span>READ</span><b>{_disk_io_rate(rb)}</b></div><div><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div><div><span>IOPS</span><b>R {_disk_io_iops(ri)} / W {_disk_io_iops(wi)}</b></div></div>
+            </div>
+          </div>
+          <div class="storage-children-v48139">
+            <div class="storage-children-title-v48139"><h4>Disks</h4><span>{safe_int(disk_count,0)} customer disk{'s' if safe_int(disk_count,0)!=1 else ''}</span></div>
+            {disk_rows}
+          </div>
+        </article>''')
+    if not cards:
+        cards = ['<div class="storage-card-empty-v48139">No customer disk sample at this snapshot.</div>']
+    sort_bar = _v48137_sort_bar(values, [
+        ("W IOPS","writeiops"),("WRITE","write"),("R IOPS","readiops"),("READ","read"),
+        ("ALLOC","allocated"),("ASSIGNED","assigned"),("%","allocpct"),("DISKS","diskcount"),("UUID","uuid"),("NODE","node"),
+    ])
+    return f'''
+    {V48139_UI_CSS}
+    <div class="card storage-table-card">
+      <div class="table-title-row"><div><h3>VM Disks</h3><div class="table-hint">One VM card per UUID. Overall capacity and performance stay at the top; every vda/vdb/vdc is separated below.</div></div>{sort_bar}</div>
+      <div class="storage-card-list-v48139">{"".join(cards)}</div>{_storage_pager(values,total)}
+    </div>'''
+
+
+def _v48139_node_mount_row(values, row):
+    node, _public_ip, mount, device, block, raid, fs, size, used, avail, usep, rb, wb, ri, wi, util, seen, disk_count, vm_count = row
+    dev = _v48135_base_device(device) or (("/dev/" + block) if block else "-")
+    filter_href = _storage_io_url(values, view="disks", node=node, mount=mount or "", q="", sort="writeiops", order="desc", page=1)
+    return f'''
+    <div class="storage-mount-row-v48139">
+      <div class="storage-disk-id-v48139">
+        <div class="disk-title"><b><a href="{escape(filter_href,quote=True)}">{escape(mount or '-')}</a></b><span>{escape(dev)} · {escape(raid or 'hardware/unknown RAID')} · {escape(fs or '-')}</span></div>
+        <code>{safe_int(vm_count,0)} VMs · {safe_int(disk_count,0)} disks · seen {fmt_push(seen)}</code>
+      </div>
+      {_v48139_capacity_bar(used,size,'used / size')}
+      <div class="storage-row-perf-v48139">
+        <div><span>READ</span><b>{_disk_io_rate(rb)}</b></div>
+        <div><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div>
+        <div><span>IOPS / UTIL</span><b>R {_disk_io_iops(ri)} / W {_disk_io_iops(wi)} · {safe_float(util,0):.1f}%</b></div>
+      </div>
+    </div>'''
+
+
+def _v48139_storage_node_group_cards(conn, values, start_ts):
+    rows = _v48136_real_storage_rows(conn, values, start_ts)
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(str(row[0]), []).append(row)
+    count_map = {str(r[0]): (safe_int(r[1],0), safe_int(r[2],0)) for r in conn.execute(
+        "SELECT node,COUNT(DISTINCT vm_uuid),COUNT(*) FROM vm_disk_current WHERE role='customer' GROUP BY node"
+    ).fetchall()}
+    groups = []
+    for node, mounts in grouped.items():
+        mounts.sort(key=lambda r: _v48135_mount_rank(r[2]))
+        ip = next((compact_ipv4(r[1]) for r in mounts if compact_ipv4(r[1])), "")
+        size = sum(max(0, safe_int(r[7], 0)) for r in mounts)
+        used = sum(max(0, safe_int(r[8], 0)) for r in mounts)
+        rb = sum(max(0.0, safe_float(r[11], 0)) for r in mounts)
+        wb = sum(max(0.0, safe_float(r[12], 0)) for r in mounts)
+        ri = sum(max(0.0, safe_float(r[13], 0)) for r in mounts)
+        wi = sum(max(0.0, safe_float(r[14], 0)) for r in mounts)
+        util = max([max(0.0, safe_float(r[15], 0)) for r in mounts] or [0.0])
+        seen = max([safe_int(r[16], 0) for r in mounts] or [0])
+        vm_count, disk_count = count_map.get(node, (0, 0))
+        groups.append((node, ip, mounts, size, used, rb, wb, ri, wi, util, seen, disk_count, vm_count))
+    metric = {
+        "node": lambda g: g[0].lower(), "mount": lambda g: str(g[2][0][2] if g[2] else "").lower(),
+        "size": lambda g: g[3], "used": lambda g: g[4], "usepct": lambda g: (g[4] / g[3]) if g[3] else 0,
+        "read": lambda g: g[5], "write": lambda g: g[6], "readiops": lambda g: g[7],
+        "writeiops": lambda g: g[8], "util": lambda g: g[9], "seen": lambda g: g[10],
+    }
+    if values["sort"] not in metric:
+        values["sort"] = "writeiops"
+    groups.sort(key=metric[values["sort"]], reverse=values["order"] != "asc")
+    total = len(groups)
+    pages = max(1, int(math.ceil(total / float(values["limit"]))))
+    values["page"] = min(values["page"], pages)
+    groups = groups[(values["page"]-1)*values["limit"]:values["page"]*values["limit"]]
+    cards = []
+    for node, ip, mounts, size, used, rb, wb, ri, wi, util, seen, disk_count, vm_count in groups:
+        node_href = url_for("node_page", node=node, period=values["period"], **({"at": values.get("at")} if values.get("at") else {}))
+        pct = used * 100.0 / size if safe_int(size,0) > 0 else 0.0
+        level = _v48139_cap_level(pct)
+        mount_rows = "".join(_v48139_node_mount_row(values, row) for row in mounts)
+        cards.append(f'''
+        <article class="storage-node-card storage-entity-card-v48139">
+          <div class="storage-entity-head-v48139">
+            <div class="storage-entity-id-v48139">
+              <span class="entity-kicker">Storage Node</span>
+              <div class="entity-main"><a href="{escape(node_href,quote=True)}">{escape(node)}</a>{f'<button type="button" class="copy-btn" data-copy="{escape(ip)}" title="Copy IP">⧉</button>' if ip else ''}</div>
+              <div class="entity-context">{f'<span>{escape(ip)}</span>' if ip else ''}<span>{len(mounts)} filesystems</span><span>· {vm_count} VMs</span><span>· {disk_count} disks</span><span>· sample {fmt_push(seen)}</span></div>
+            </div>
+            <div class="storage-entity-actions-v48139"><a class="btn" href="{escape(node_href,quote=True)}">View node</a></div>
+          </div>
+          <div class="storage-overview-v48139">
+            <div class="storage-section-box-v48139">
+              <span class="storage-section-label-v48139">Overall</span>
+              <div class="storage-overall-value-v48139"><b>{_disk_io_bytes(used)} / {_disk_io_bytes(size)}</b><span>{pct:.1f}% used / size</span></div>
+              <div class="storage-cap-track-v48139 disk-cap-meter {level}"><i style="width:{min(100.0,max(0.0,pct)):.1f}%"></i></div>
+            </div>
+            <div class="storage-section-box-v48139">
+              <span class="storage-section-label-v48139">Performance</span>
+              <div class="storage-perf-grid-v48139"><div><span>READ</span><b>{_disk_io_rate(rb)}</b></div><div><span>WRITE</span><b>{_disk_io_rate(wb)}</b></div><div><span>IOPS / HOT UTIL</span><b>R {_disk_io_iops(ri)} / W {_disk_io_iops(wi)} · {util:.1f}%</b></div></div>
+            </div>
+          </div>
+          <div class="storage-children-v48139">
+            <div class="storage-children-title-v48139"><h4>Filesystems</h4><span>{len(mounts)} real roots</span></div>
+            {mount_rows}
+          </div>
+        </article>''')
+    if not cards:
+        cards = ['<div class="storage-card-empty-v48139">No real node storage sample at this snapshot.</div>']
+    sort_bar = _v48137_sort_bar(values, [
+        ("W IOPS","writeiops"),("WRITE","write"),("R IOPS","readiops"),("READ","read"),
+        ("UTIL","util"),("USED","used"),("SIZE","size"),("%","usepct"),("NODE","node"),
+    ])
+    return f'''
+    {V48139_UI_CSS}
+    <div class="card storage-table-card">
+      <div class="table-title-row"><div><h3>Storage Node</h3><div class="table-hint">One node card per node. Overall usage and performance stay at the top; each real filesystem is separated below.</div></div>{sort_bar}</div>
+      <div class="storage-card-list-v48139">{"".join(cards)}</div>{_storage_pager(values,total)}
+    </div>'''
+
+
+# Existing dispatchers resolve these names at request time. Filtered mount
+# views remain the original one-disk-per-row / one-mount-per-row tables.
+_v48137_storage_disk_group_cards = _v48139_storage_disk_group_cards
+_v48137_storage_node_group_cards = _v48139_storage_node_group_cards

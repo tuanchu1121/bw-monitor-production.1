@@ -1,0 +1,10 @@
+BW Monitor v48.13.9-prod-r1-abuse-storage-cards
+
+Focused UI update only:
+- Current VM Abuse adds Host Allocated / Assigned across customer disks.
+- Abuse disk capacity sorts: ALLOC, ASSIGNED, %, SLOTS.
+- VM Disks All view uses one strong card per UUID with Overall, Performance,
+  separated vda/vdb/vdc rows, colored capacity meters and View details.
+- Storage Node All view mirrors the same hierarchy for node filesystems.
+- Filtered storage views, collectors, policies, retention, purge logic and all
+  unrelated Dashboard/Top VM/Node Health behavior are unchanged.

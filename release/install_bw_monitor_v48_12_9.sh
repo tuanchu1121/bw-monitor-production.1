@@ -25,6 +25,7 @@ ABUSE_TABLE_TEST_SRC="${21:-./test_v48_12_8_abuse_table.py}"
 OPERATIONS_TEST_SRC="${22:-./test_v48_12_9_operations_ui.py}"
 STORAGE_TEST_SRC="${23:-./test_v48_13_4_storage_precision.py}"
 STORAGE_HISTORY_TEST_SRC="${24:-./test_v48_13_7_storage_history.py}"
+ABUSE_STORAGE_CARDS_TEST_SRC="${25:-./test_v48_13_9_abuse_storage_cards.py}"
 
 TARGET_DIR="${BW_MONITOR_DIR:-/opt/bw-monitor}"
 APP_TARGET="${BW_MONITOR_APP_TARGET:-$TARGET_DIR/app.py}"
@@ -43,7 +44,7 @@ DEPLOY_STARTED=0
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC"; do
+for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC"; do
   [[ -f "$file" ]] || die "Missing file: $file"
 done
 
@@ -86,7 +87,7 @@ rollback() {
 }
 
 say "Pre-flight syntax and release checks"
-"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$AGENT_SRC"
+"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$STORAGE_HISTORY_TEST_SRC" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$AGENT_SRC"
 bash -n "$0" "$RECOVERY_SRC" "$DB_CHECK_SRC"
 grep -q 'V4810_VERSION = "48.10.0"' "$APP_SRC" || die "Missing v48.10.0 engine marker"
 grep -q 'V48101_VERSION = "48.10.1"' "$APP_SRC" || die "Missing v48.10.1 wide UI marker"
@@ -116,6 +117,8 @@ grep -q 'V48137_VERSION = "48.13.7"' "$APP_SRC" || die "Missing v48.13.7 retaine
 grep -q 'V48137_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.7-r1 retained storage build marker"
 grep -q 'V48138_VERSION = "48.13.8"' "$APP_SRC" || die "Missing v48.13.8 Storage identity UI marker"
 grep -q 'V48138_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.8-r1 Storage identity build marker"
+grep -q 'V48139_VERSION = "48.13.9"' "$APP_SRC" || die "Missing v48.13.9 Abuse/Storage card marker"
+grep -q 'V48139_BUILD = "r1"' "$APP_SRC" || die "Missing v48.13.9-r1 build marker"
 grep -q 'storage-vm-identity' "$APP_SRC" || die "Missing UUID-first Storage VM identity"
 grep -q 'storage-top-card' "$APP_SRC" || die "Missing Top VM-style Storage controls"
 grep -q 'storage_payload' "$APP_SRC" || die "Missing retained Storage payload"
@@ -203,10 +206,11 @@ say "Run isolated regression suites on temporary SQLite databases"
 "$PYTHON_BIN" "$OPERATIONS_TEST_SRC" "$APP_SRC"
 "$PYTHON_BIN" "$STORAGE_TEST_SRC" "$APP_SRC" "$AGENT_SRC"
 "$PYTHON_BIN" "$STORAGE_HISTORY_TEST_SRC" "$APP_SRC"
+"$PYTHON_BIN" "$ABUSE_STORAGE_CARDS_TEST_SRC" "$APP_SRC"
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.13.8-r1 Storage identity/bars pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.13.9-r1 Abuse disk capacity / Storage cards pre-flight checks passed. No files were installed."
   exit 0
 fi
 

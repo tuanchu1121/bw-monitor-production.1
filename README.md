@@ -1,12 +1,20 @@
-# BW Monitor v48.13.8-r1 Storage Identity Production
+# BW Monitor v48.13.9-r1 Abuse + Storage Cards Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **48.13.8-prod-r1-storage-identity-bars**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **48.13.9-prod-r1-abuse-storage-cards**, built on and preserving the v48.12.9-r4 operational UI. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
 
+
+### Abuse disk capacity and clearer Storage cards (48.13.9-r1)
+
+- `Current VM Abuse` adds a compact `Host Allocated / Assigned` meter across customer disks.
+- Abuse capacity can be sorted independently by `ALLOC`, `ASSIGNED`, `%`, or `SLOTS`.
+- `VM Disks` All view is one strong card per UUID with clear `Overall`, `Performance`, and separated `vda/vdb/vdc` sections plus `View details`.
+- `Storage Node` mirrors the same hierarchy with overall node storage, performance, and separated real filesystem roots.
+- Filtered per-storage forensic tables, Agent collection, retention, purge behavior, Dashboard, Top VM, Node Health, and policy logic are unchanged.
 
 ### UUID-first Storage cards and Top VM-style controls (48.13.8-r1)
 
@@ -357,7 +365,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.7-prod-r1`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.9-prod-r1`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 

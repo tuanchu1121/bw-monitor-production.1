@@ -1,3 +1,9 @@
+## 48.13.9-prod-r1-abuse-storage-cards
+
+- Added sortable `ALLOC · ASSIGNED · % · SLOTS` disk capacity to Current VM Abuse.
+- Reworked only grouped `VM Disks` and `Storage Node` cards into clear `Overall`, `Performance`, and separated child sections.
+- Kept filtered storage tables and unrelated monitoring logic unchanged.
+
 ## 48.13.8-prod-r1-storage-identity-bars
 - Made VM UUID the primary identity in Storage I/O; node/IP are compact supporting metadata.
 - Rebuilt Storage lookback/search controls with the same workflow and classes used by Top VM.
