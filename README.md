@@ -1,8 +1,8 @@
-# BW Monitor v48.13.1-r4 Production
+# BW Monitor v48.12.9-r4 Production
 
 BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
 
-This repository contains the complete deployment source for **BW Monitor v48.13.1-r4-prod-r2**. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
+This repository contains the complete deployment source for **BW Monitor v48.12.9-r4-prod-r2**. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
 
 > This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
 
@@ -56,7 +56,7 @@ restore.sh                     guarded backup restore
 collect-diagnostics.sh         sanitized support bundle
 publish-github.sh              validate, push and optionally create a release
 
-release/                       exact v48.13.1-r4 application release and tests
+release/                       exact v48.12.9-r4 application release and tests
 deploy/monitor/                Monitor systemd/Nginx/operations tooling
 deploy/agent/                  Agent service, installer and doctor
 ansible/                       Agent and Monitor playbooks
@@ -338,7 +338,7 @@ gh auth login
   --release
 ```
 
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.1-r4`, and can create/update a GitHub Release with production source archives.
+The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.12.9-r4`, and can create/update a GitHub Release with production source archives.
 
 For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
@@ -367,7 +367,5 @@ For manual GitHub Web upload, create a repository named `bw-monitor`, then uploa
 - Review disk growth and retention health regularly.
 - Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
 
-
-## v48.13.1 disk attribution
-
-Agent v11 reports each libvirt block separately, maps its source path to the node mount and logical storage device, and keeps the legacy aggregate metrics. Open `/storage` to find the top VM disk contributors for `/home`, `/home2`, or any other mounted storage.
+### Storage I/O extension (48.13.2)
+This release keeps the original Dashboard, Top VM, VM Abuse and Node Health UI unchanged. The new **Storage I/O** tab provides per-VM-disk and per-node-storage current metrics with lookback filtering, search, sorting and pagination.

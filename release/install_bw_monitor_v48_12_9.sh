@@ -23,6 +23,7 @@ INTELLIGENCE_TEST_SRC="${19:-./test_v48_12_6_abuse_intelligence.py}"
 SIMPLE_ABUSE_TEST_SRC="${20:-./test_v48_12_7_simple_abuse_dashboard.py}"
 ABUSE_TABLE_TEST_SRC="${21:-./test_v48_12_8_abuse_table.py}"
 OPERATIONS_TEST_SRC="${22:-./test_v48_12_9_operations_ui.py}"
+STORAGE_TEST_SRC="${23:-./test_v48_13_2_storage_io.py}"
 
 TARGET_DIR="${BW_MONITOR_DIR:-/opt/bw-monitor}"
 APP_TARGET="${BW_MONITOR_APP_TARGET:-$TARGET_DIR/app.py}"
@@ -41,7 +42,7 @@ DEPLOY_STARTED=0
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC"; do
+for file in "$APP_SRC" "$RUNNER_SRC" "$SERVICE_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$AGENT_SRC" "$RECOVERY_SRC" "$DB_CHECK_SRC" "$RETENTION_RUNNER_SRC" "$RETENTION_SERVICE_SRC" "$RETENTION_TIMER_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC"; do
   [[ -f "$file" ]] || die "Missing file: $file"
 done
 
@@ -84,7 +85,7 @@ rollback() {
 }
 
 say "Pre-flight syntax and release checks"
-"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$AGENT_SRC"
+"$PYTHON_BIN" -m py_compile "$APP_SRC" "$RUNNER_SRC" "$RETENTION_RUNNER_SRC" "$BASE_TEST_SRC" "$RELEASE_TEST_SRC" "$UI_TEST_SRC" "$API_TEST_SRC" "$API_HUB_TEST_SRC" "$POLISH_TEST_SRC" "$COMPACT_TEST_SRC" "$GUARD_TEST_SRC" "$BOUNDED_TEST_SRC" "$INTELLIGENCE_TEST_SRC" "$SIMPLE_ABUSE_TEST_SRC" "$ABUSE_TABLE_TEST_SRC" "$OPERATIONS_TEST_SRC" "$STORAGE_TEST_SRC" "$AGENT_SRC"
 bash -n "$0" "$RECOVERY_SRC" "$DB_CHECK_SRC"
 grep -q 'V4810_VERSION = "48.10.0"' "$APP_SRC" || die "Missing v48.10.0 engine marker"
 grep -q 'V48101_VERSION = "48.10.1"' "$APP_SRC" || die "Missing v48.10.1 wide UI marker"
@@ -104,6 +105,9 @@ grep -q 'V48127_VERSION = "48.12.7"' "$APP_SRC" || die "Missing v48.12.7 simplif
 grep -q 'V48128_VERSION = "48.12.8"' "$APP_SRC" || die "Missing v48.12.8 Abuse table marker"
 grep -q 'V48129_VERSION = "48.12.9"' "$APP_SRC" || die "Missing v48.12.9 operations Abuse marker"
 grep -q 'V48129_BUILD = "r4"' "$APP_SRC" || die "Missing v48.12.9-r4 compact UI marker"
+grep -q 'def storage_io_page' "$APP_SRC" || die "Missing v48.13.2 Storage I/O route"
+grep -q 'CREATE TABLE IF NOT EXISTS vm_disk_current' "$APP_SRC" || die "Missing per-disk current schema"
+grep -q 'AGENT_VERSION = 11' "$AGENT_SRC" || die "Missing Agent v11 per-disk collector"
 grep -q 'def _v48129_metric_abuse_time' "$APP_SRC" || die "Missing metric-local Abuse duration helper"
 grep -q 'def _v48129_vm_detail_cpu_stat' "$APP_SRC" || die "Missing VM detail CPU Full meter"
 grep -q 'def admin_api_keys_page' "$APP_SRC" || die "Missing API Management admin page"
@@ -183,10 +187,11 @@ say "Run isolated regression suites on temporary SQLite databases"
 "$PYTHON_BIN" "$SIMPLE_ABUSE_TEST_SRC" "$APP_SRC"
 "$PYTHON_BIN" "$ABUSE_TABLE_TEST_SRC" "$APP_SRC"
 "$PYTHON_BIN" "$OPERATIONS_TEST_SRC" "$APP_SRC"
+"$PYTHON_BIN" "$STORAGE_TEST_SRC" "$APP_SRC" "$AGENT_SRC"
 
 if [[ "${BW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
   echo
-  echo "BW Monitor v48.12.9 pre-flight checks passed. No files were installed."
+  echo "BW Monitor v48.13.2 disk-only pre-flight checks passed. No files were installed."
   exit 0
 fi
 

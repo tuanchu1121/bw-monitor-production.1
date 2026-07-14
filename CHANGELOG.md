@@ -1,15 +1,3 @@
-## v48.13.1-prod-r3
-
-- Corrected the default GitHub repository to `tuanchu1121/bw-monitor-production.1` in all bootstrap scripts, deployment scripts, documentation, and publishing helpers.
-- Fixed the agent package so `install-agent.sh` deploys the v48.13.1 per-disk collector from `deploy/agent/agent.py`.
-- Existing installations remain compatible and can be updated by rerunning the same installer command.
-
-## 48.13.1-prod-r1
-
-- Per-VM-disk libvirt metrics with source, mount, backend, capacity, allocation, throughput and IOPS.
-- Node storage current metrics and top contributors page.
-- Backward-compatible aggregate disk metrics and Agent v10 payload support.
-
 # Changelog
 
 ## 48.12.9-r4-prod-r2
@@ -51,12 +39,7 @@
 - Local release audit, reproducible source archives, checksum manifest and GitHub publish helper.
 - Full English installation, operations, database, audit, troubleshooting, API and code architecture documentation.
 
-## 48.13.1
-- Sortable Top VM disk Allocated/Assigned, disk count, Read IOPS and Write IOPS.
-- Full per-disk details on VM detail pages.
-- Disk-aware Current Abuse context linked by node + VM UUID.
-- VM/node purge now removes VM-scoped disk and abuse rows.
-
-## v48.13.1-prod-r4
-- Fixed a false failure in `test_v48_10_4_compact_ram.py` when the Top VM RAM column is the active sort and renders as `RAM ↓` or `RAM ↑`.
-- Kept validation that exactly one RAM column is rendered.
+## 48.13.2-prod-r1-disk-only
+- Restored the untouched 48.12.9-r4 UI/logic as the base.
+- Added only the Storage I/O tab and per-disk/current-storage collector.
+- Added compact allocated/assigned meter, search, lookback, sorting and pagination inside Storage I/O.

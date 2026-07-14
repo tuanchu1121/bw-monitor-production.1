@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bw-agent v10 daemon (monitor-synchronized directional PPS abuse + total peaks)
+bw-agent v11 daemon (per-disk storage I/O + monitor-synchronized abuse)
 
 Collects:
   1) VM/tap network traffic from libvirt domiflist + /sys/class/net/<tap>/statistics

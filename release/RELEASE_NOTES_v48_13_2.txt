@@ -1,0 +1,18 @@
+BW Monitor 48.13.2-prod-r1-disk-only
+
+Scope discipline
+- Based directly on the original 48.12.9-r4 production UI.
+- Dashboard, Top VM, VM Abuse, Node Health, Admin, existing routes, renderers and sort behavior are unchanged.
+
+Added only
+- Agent v11 per-disk libvirt metrics from the existing bulk domstats call.
+- Latest per-VM-disk and per-node-storage tables.
+- Compact Storage I/O navigation tab.
+- VM Disks and Storage Backends subviews.
+- Lookback selector, search, node/storage filters, sortable columns and pagination.
+- Allocated / Assigned compact meter for VM disks.
+- VM/node purge cleanup for the new current disk tables.
+
+Storage I/O period behavior
+- The period selector is a latest-sample lookback, consistent with snapshot-oriented pages.
+- It does not store high-volume per-disk history, protecting SQLite at large node/VM scale.
