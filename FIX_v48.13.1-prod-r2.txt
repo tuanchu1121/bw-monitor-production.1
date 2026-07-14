@@ -1,4 +1,4 @@
-v48.13.1-prod-r2 full package
+v48.13.1-prod-r3 full package
 
 Fixes the installer preflight false failure caused by the old regression test
 not recognizing vm_abuse_page_v48131.
