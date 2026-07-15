@@ -4,7 +4,7 @@ REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 REF="${BW_GITHUB_REF:-main}"
 TOKEN="${GITHUB_TOKEN:-}"
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null && pwd || true)"
-if [[ -x "$SELF_DIR/deploy/postgres/install-postgres-native.sh" ]]; then
+if [[ -f "$SELF_DIR/deploy/postgres/install-postgres-native.sh" ]]; then
   export BW_GITHUB_REPO="$REPO" BW_GITHUB_REF="$REF"
   exec bash "$SELF_DIR/deploy/postgres/install-postgres-native.sh" "$@"
 fi
@@ -21,6 +21,9 @@ else
 fi
 tar -xzf "$TMP/repo.tar.gz" -C "$TMP"
 ROOT="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-[[ -x "$ROOT/deploy/postgres/install-postgres-native.sh" ]] || { echo 'Downloaded repository is incomplete. Push the v50 release to the selected ref.' >&2; exit 1; }
+[[[ -f "$ROOT/deploy/postgres/install-postgres-native.sh" ]] || {
+  echo 'Downloaded repository is incomplete: deploy/postgres/install-postgres-native.sh is missing.' >&2
+  exit 1
+}
 export BW_GITHUB_REPO="$REPO" BW_GITHUB_REF="$REF"
 exec bash "$ROOT/deploy/postgres/install-postgres-native.sh" "$@"
