@@ -6497,7 +6497,7 @@ def page(title, content):
                     <a href="{url_for('top_page')}">Top VM</a>
                     <a href="{url_for('vm_abuse_page')}">VM Abuse</a>
                     <a href="{url_for('storage_io_page')}">Storage I/O</a>
-                    <a href="{url_for('bandwidth_consumption_page')}">Bandwidth Consumption</a>
+                    <a href="{url_for('bandwidth_consumption_page')}">Consumption</a>
                     <a href="{url_for('node_health_page')}">Node Health</a>
                 </nav>
                 <div class="theme-switch" role="group" aria-label="Theme mode">
@@ -28281,7 +28281,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.3.0-prod-r1-bandwidth-consumption",
+            "version":"50.3.1-prod-r1-consumption-route-fix",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28586,7 +28586,7 @@ def page(title, content):
 # protocol. Agents submit one compact node aggregate for each completed local
 # 2-hour bucket. VM UUIDs and per-VM history are deliberately not stored.
 
-V5030_RELEASE = "50.3.0-prod-r1-bandwidth-consumption"
+V5030_RELEASE = "50.3.1-prod-r1-consumption-route-fix"
 V5030_BW_TABLE = "node_bandwidth_consumption_2h"
 V5030_BW_BUCKET_SECONDS = 2 * 3600
 V5030_BW_RETENTION_SECONDS = 7 * 86400
@@ -29142,9 +29142,9 @@ def bandwidth_consumption_page():
       .bwcons-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}.bwcons-summary{padding:15px}.bwcons-summary>span{display:block;font-weight:800;margin-bottom:10px}.bwcons-summary>div{display:flex;justify-content:space-between;padding:5px 0}.bwcons-summary small{color:var(--muted,#667085)}.bwcons-summary b{font-variant-numeric:tabular-nums}.bwcons-summary.public{border-top:3px solid #1677ff}.bwcons-summary.private{border-top:3px solid #8b5cf6}.bwcons-summary.vmpublic{border-top:3px solid #12a150}.bwcons-summary.vmprivate{border-top:3px solid #f59e0b}
       .bwcons-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bwcons-toolbar input{min-width:260px;flex:1}.bwcons-toolbar select{min-width:150px}.bwcons-sortbar{margin-top:12px}.bwcons-table{min-width:1120px}.bwcons-table th:nth-child(1){width:180px}.bwcons-table th:nth-child(3){width:150px}.bwcons-table th:nth-child(4){width:190px}
       .bwcons-node{vertical-align:top}.bwcons-node>a{display:block;margin-bottom:8px}.bwcons-groups{display:grid;grid-template-columns:repeat(3,minmax(195px,1fr));gap:8px}.bwcons-group{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px}.bwcons-group-title{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--muted,#667085);margin-bottom:6px}.bwcons-triplet{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.bwcons-triplet span{font-size:10px;color:var(--muted,#667085)}.bwcons-triplet b{display:block;margin-top:2px;color:var(--text,#111827);font-size:12px;font-variant-numeric:tabular-nums}.bwcons-table td>small{display:block;margin-top:6px;color:var(--muted,#667085)}
-      @media(max-width:1250px){.bwcons-summary-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}.bwcons-groups{grid-template-columns:repeat(2,minmax(190px,1fr))}}@media(max-width:760px){.bwcons-summary-grid{grid-template-columns:1fr}.bwcons-toolbar input{min-width:100%}.bwcons-groups{grid-template-columns:1fr}}
+      @media(max-width:1250px){.bwcons-summary-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}.bwcons-groups{grid-template-columns:repeat(2,minmax(190px,1fr))}}@media(max-width:760px){.bwcons-summary-grid{grid-template-columns:1fr}.bwcons-toolbar input{min-width:100%%}.bwcons-groups{grid-template-columns:1fr}}
     </style>
-    <div class="card bwcons-hero"><div><span class="eyebrow">NODE ACCOUNTING</span><h2>Bandwidth Consumption</h2><p>Physical and aggregate VM traffic remain separate for Public and Private networks. No per-VM UUID history is stored.</p></div><div class="hero-meta"><span>Bucket <b>2 hours</b></span><span>Retention <b>7 days</b></span><span>Timezone <b>%s</b></span></div></div>
+    <div class="card bwcons-hero"><div><span class="eyebrow">NODE ACCOUNTING</span><h2>Consumption</h2><p>Physical and aggregate VM traffic remain separate for Public and Private networks. No per-VM UUID history is stored.</p></div><div class="hero-meta"><span>Bucket <b>2 hours</b></span><span>Retention <b>7 days</b></span><span>Timezone <b>%s</b></span></div></div>
     <div class="card"><div class="label">Time range · latest completed local bucket</div><div class="bwcons-periods">%s</div><div class="table-hint">Range: %s → %s. The current unfinished 2-hour bucket is not included.</div></div>
     <div class="bwcons-summary-grid">%s%s%s%s</div>
     <div class="card">
@@ -29166,7 +29166,7 @@ def bandwidth_consumption_page():
         url_for("bandwidth_consumption_page"), escape(period, quote=True), escape(sort_by, quote=True), escape(order, quote=True), escape(q, quote=True),
         section_html, status_html, coverage_html, url_for("bandwidth_consumption_page"), sort_bar, "".join(table_rows),
     )
-    return page("Bandwidth Consumption", content)
+    return page("Consumption", content)
 
 
 def _v5030_bandwidth_admin_stats():
@@ -29218,7 +29218,7 @@ def _v490_admin_overview(stats):
         token = escape(csrf_token(), quote=True)
         card = """
         <div class="card admin-section">
-          <div class="section-head"><div><span class="eyebrow">BANDWIDTH CONSUMPTION</span><h3>2-hour node accounting storage</h3><p>Direct idempotent ingestion. No monitor-side queue and no per-VM UUID rows.</p></div><a class="btn" href="%s">Open page</a></div>
+          <div class="section-head"><div><span class="eyebrow">CONSUMPTION</span><h3>2-hour node accounting storage</h3><p>Direct idempotent ingestion. No monitor-side queue and no per-VM UUID rows.</p></div><a class="btn" href="%s">Open page</a></div>
           <div class="admin-kpis">
             <div><small>RETENTION</small><b>7 days</b></div><div><small>ROWS</small><b>%s</b></div><div><small>TABLE + INDEX</small><b>%s</b></div>
             <div><small>REPORTING VISIBLE NODES</small><b>%s / %s</b></div><div><small>MISSING</small><b>%s</b></div><div><small>LAST RECEIVED</small><b>%s</b></div>
@@ -29226,7 +29226,7 @@ def _v490_admin_overview(stats):
           </div>
           <div class="bulk-bar">
             <form method="post" action="%s"><input type="hidden" name="csrf_token" value="%s"><input type="hidden" name="action" value="cleanup"><button type="submit">Run cleanup now</button></form>
-            <form method="post" action="%s" onsubmit="return confirm('Delete all Bandwidth Consumption history?');"><input type="hidden" name="csrf_token" value="%s"><input type="hidden" name="action" value="clear"><input name="confirm_text" placeholder="CLEAR BANDWIDTH HISTORY"><button class="btn-danger" type="submit">Clear history</button></form>
+            <form method="post" action="%s" onsubmit="return confirm('Delete all Consumption history?');"><input type="hidden" name="csrf_token" value="%s"><input type="hidden" name="action" value="clear"><input name="confirm_text" placeholder="CLEAR BANDWIDTH HISTORY"><button class="btn-danger" type="submit">Clear history</button></form>
           </div>
           <div class="table-hint">Reset ALL app data + queue also clears this table and advances a reset epoch, so old Agent-local retry buckets cannot restore deleted history.</div>
         </div>
@@ -29238,8 +29238,8 @@ def _v490_admin_overview(stats):
         )
         return base + card
     except Exception as exc:
-        app.logger.exception("Bandwidth Consumption Admin card failed")
-        return base + '<div class="card"><h3>Bandwidth Consumption</h3><div class="error-box">%s</div></div>' % escape(str(exc))
+        app.logger.exception("Consumption Admin card failed")
+        return base + '<div class="card"><h3>Consumption</h3><div class="error-box">%s</div></div>' % escape(str(exc))
 
 
 @app.route("/admin/bandwidth-consumption", methods=["POST"])
@@ -29398,7 +29398,7 @@ def bandwidth_consumption_node_page(node):
     inventory, buckets = _v5030_bandwidth_node_buckets(node, start, end)
     if not inventory:
         return page(
-            "Bandwidth Consumption",
+            "Consumption",
             '<div class="card"><h3>Node unavailable</h3><div class="empty">The node does not exist or is hidden.</div></div>',
         ), 404
 
@@ -29443,7 +29443,7 @@ def bandwidth_consumption_node_page(node):
       .bwcons-detail-table{min-width:2200px}.bwcons-detail-table th:first-child{width:245px}.bwcons-detail-table th:last-child{width:145px}.bwcons-detail-table td{vertical-align:top}.bwcons-detail-table td>small{display:block;margin-top:7px;color:var(--muted,#667085)}
       .bwcons-group{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px;min-width:225px}.bwcons-group-title{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--muted,#667085);margin-bottom:6px}.bwcons-triplet{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.bwcons-triplet span{font-size:10px;color:var(--muted,#667085)}.bwcons-triplet b{display:block;margin-top:2px;color:var(--text,#111827);font-size:12px;font-variant-numeric:tabular-nums}
     </style>
-    <div class="card bwcons-detail-head"><div><span class="eyebrow">BANDWIDTH CONSUMPTION · NODE</span><h2>%s</h2><p>Completed local 2-hour buckets. Public and Private remain separate; VM values are aggregate node totals.</p></div><div class="hero-meta"><a class="btn" href="%s">Open Node</a><a class="btn" href="%s">Back to Bandwidth</a></div></div>
+    <div class="card bwcons-detail-head"><div><span class="eyebrow">CONSUMPTION · NODE</span><h2>%s</h2><p>Completed local 2-hour buckets. Public and Private remain separate; VM values are aggregate node totals.</p></div><div class="hero-meta"><a class="btn" href="%s">Open Node</a><a class="btn" href="%s">Back to Consumption</a></div></div>
     <div class="card"><div class="label">Time range · %s</div><div class="bwcons-periods">%s</div><div class="table-hint">%s → %s · Node status: %s · Last operational push: %s</div></div>
     <div class="card"><div class="table-wrap"><table class="bwcons-detail-table"><thead><tr><th>BUCKET</th><th>PHYSICAL PUBLIC</th><th>PHYSICAL PRIVATE</th><th>VM PUBLIC</th><th>VM PRIVATE</th><th>PUBLIC DIFFERENCE</th><th>PRIVATE DIFFERENCE</th><th>COVERAGE</th></tr></thead><tbody>%s</tbody></table></div></div>
     """ % (
@@ -29454,7 +29454,7 @@ def bandwidth_consumption_node_page(node):
         _v5030_status_name(inventory["last_push"]).title(), fmt_full(inventory["last_push"]),
         "".join(rows),
     )
-    return page("Bandwidth Consumption · %s" % node, content)
+    return page("Consumption · %s" % node, content)
 
 
 _v48140_cached_endpoint("bandwidth_consumption_node_page", V48140_PAGE_CACHE_TTL)

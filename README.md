@@ -2,7 +2,7 @@
 
 Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-> Release: `50.3.0-prod-r1-bandwidth-consumption`
+> Release: `50.3.1-prod-r1-consumption-route-fix`
 
 > **Canonical-source bootstrap:** the installer verifies `SHA256SUMS` and stages only files in the release manifest. Old v48/v49 folders accidentally left in a GitHub Desktop repository are ignored during installation.
 
@@ -57,9 +57,9 @@ The Agent behavior is unchanged:
 - Scoped REST API keys, Allowed IP/CIDR and rate limits
 - Dark/light UI and existing route compatibility
 - Agent deployment through one-command installer or Ansible
-- Bandwidth Consumption after Storage I/O: separate Physical Public, Physical Private, aggregate VM Public and aggregate VM Private RX/TX, node search/filter/sort, coverage and 7-day retention
+- Consumption after Storage I/O: separate Physical Public, Physical Private, aggregate VM Public and aggregate VM Private RX/TX, node search/filter/sort, coverage and 7-day retention
 
-## Bandwidth Consumption
+## Consumption
 
 The new page is placed immediately after **Storage I/O**. It is intentionally isolated from the existing 5-minute monitoring and Abuse paths.
 

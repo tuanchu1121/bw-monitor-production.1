@@ -19,13 +19,13 @@ try:
     data=json.loads(Path('/var/lib/virtinfra-agent/runtime.json').read_text())
     state=data.get('bandwidth_consumption') if isinstance(data,dict) else {}
     state=state if isinstance(state,dict) else {}
-    print('[INFO] Bandwidth Consumption pending=%s partial=%s last_sent_bucket=%s' % (
+    print('[INFO] Consumption pending=%s partial=%s last_sent_bucket=%s' % (
         len(state.get('pending') or []),
         len(state.get('buckets') or {}),
         state.get('last_sent_bucket') or '-',
     ))
 except Exception as exc:
-    print('[WARN] Cannot read Bandwidth Consumption runtime state: %s' % exc)
+    print('[WARN] Cannot read Consumption runtime state: %s' % exc)
 PY_RUNTIME
 fi
 echo; journalctl -u "$UNIT" -n 40 --no-pager || true

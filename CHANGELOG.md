@@ -1,4 +1,11 @@
-## 50.3.0-prod-r1-bandwidth-consumption
+## 50.3.1-prod-r1-consumption-route-fix
+
+- Renamed the visible navigation/page label from `Bandwidth Consumption` to `Consumption`.
+- Fixed the `/bandwidth-consumption` Internal Server Error caused by an unescaped literal `%` in a CSS rule inside an old-style Python `%` formatted HTML block.
+- Kept the existing route, endpoint, table, Agent payload and retention schema unchanged for safe in-place upgrades.
+- Added a route-render regression contract so this formatting failure cannot silently return.
+
+## 50.3.1-prod-r1-consumption-route-fix
 
 - Fixed Dashboard period-slot selection so `5m` is the latest retained snapshot, `10m` is the previous 5-minute snapshot, `15m` is the third snapshot, and later buttons continue in the same sequence.
 - Changed Dashboard `Selected Snapshot` to show the retained bucket actually used by the query instead of a theoretical wall-clock request point.

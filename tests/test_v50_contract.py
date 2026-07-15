@@ -9,7 +9,7 @@ def need(cond: bool, message: str) -> None:
         raise AssertionError(message)
 
 version = (ROOT / "VERSION").read_text().strip()
-need(version == "50.3.0-prod-r1-bandwidth-consumption", f"unexpected VERSION: {version}")
+need(version == "50.3.1-prod-r1-consumption-route-fix", f"unexpected VERSION: {version}")
 
 app = (ROOT / "app/app.py").read_text()
 pg = (ROOT / "app/bw_pg.py").read_text()
@@ -109,9 +109,11 @@ need("VirtInfra Agent v13" in agent and "VirtInfra-Agent/13" in agent, "VirtInfr
 need("virtinfra-agent.service" in agent_install and "/var/lib/virtinfra-agent" in agent_install, "canonical Agent service/path missing")
 need((ROOT / "deploy/postgres/virtinfra-monitor-health-watch.timer").exists(), "health watchdog timer missing")
 
-# v50.3.0 compact Bandwidth Consumption is additive and node-level only.
-need("<a href=\"{url_for('bandwidth_consumption_page')}\">Bandwidth Consumption</a>" in app, "Bandwidth Consumption nav item missing")
-need(app.index('bandwidth_consumption_page') > app.index('storage_io_page'), "Bandwidth Consumption must be after Storage I/O")
+# v50.3.1 compact Consumption route fix; accounting remains additive and node-level only.
+need("<a href=\"{url_for('bandwidth_consumption_page')}\">Consumption</a>" in app, "Consumption nav item missing")
+need(app.index('bandwidth_consumption_page') > app.index('storage_io_page'), "Consumption must be after Storage I/O")
+need(".bwcons-toolbar input{min-width:100%%}" in app, "Consumption route CSS percent must be escaped inside old-style formatting")
+need(".bwcons-toolbar input{min-width:100%}.bwcons-groups" not in app, "raw CSS percent would crash the Consumption route at render time")
 need('@app.route("/push/bandwidth-consumption", methods=["POST"])' in app, "compact bandwidth endpoint missing")
 need('node_bandwidth_consumption_2h' in app, "compact bandwidth table missing")
 need('V5030_BW_RETENTION_SECONDS = 7 * 86400' in app, "7-day bandwidth retention missing")

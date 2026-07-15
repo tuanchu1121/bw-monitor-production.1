@@ -3,7 +3,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 app=(root/'app/app.py').read_text()
 agent=(root/'deploy/agent/agent.py').read_text()
-assert (root/'VERSION').read_text().strip() == '50.3.0-prod-r1-bandwidth-consumption'
+assert (root/'VERSION').read_text().strip() == '50.3.1-prod-r1-consumption-route-fix'
 assert 'VirtInfra Monitor' in app
 assert 'WAL reserved/recycled' in app
 assert 'SHM {human' not in app
@@ -31,4 +31,4 @@ assert 'systemctl is-active virtinfra-agent.service' in playbook
 assert 'systemctl is-active bwagent.service' not in playbook
 readme=(root/'README.md').read_text()
 assert 'virtinfra-agent.service' in readme
-print('PASS: VirtInfra Monitor v50.3.0 Bandwidth Consumption contract')
+print('PASS: VirtInfra Monitor v50.3.1 Consumption route fix contract')
