@@ -14,10 +14,7 @@ bw-monitorctl db-check
 ```bash
 systemctl status bw-monitor --no-pager -l
 journalctl -u bw-monitor -n 300 --no-pager
-curl -fsS http://127.0.0.1:8080/livez
-curl -fsS http://127.0.0.1:8080/healthz
-systemctl status bw-monitor-health-watch.timer --no-pager -l
-journalctl -t bw-monitor-health-watch -n 100 --no-pager
+curl -I http://127.0.0.1:8080/login
 ```
 
 In domain mode:
@@ -74,33 +71,3 @@ bw-monitorctl logs postgres 300
 ```
 
 The restore command creates a pre-restore dump before replacing the database.
-
-
-## Intermittent 502 Bad Gateway
-
-A 502 means Nginx could not reach a healthy Gunicorn listener at that instant. Check both layers instead of assuming PostgreSQL is corrupt:
-
-```bash
-bw-monitorctl health
-systemctl status nginx bw-monitor --no-pager -l
-journalctl -u nginx -u bw-monitor --since "15 minutes ago" --no-pager
-journalctl -t bw-monitor-health-watch --since "15 minutes ago" --no-pager
-```
-
-v50.1 includes a local liveness watchdog, unlimited systemd restart attempts, shorter restart delay, Gunicorn worker heartbeat temp files in `/dev/shm`, and hardened Nginx upstream timeouts. `/livez` deliberately does not query PostgreSQL; `/healthz` does.
-
-## Hidden Node or VM still appears
-
-After v50.1, Hide/Restore increments a PostgreSQL-backed cache generation shared by all workers. Dashboard search and Storage queries also join the visibility inventory directly. Check the inventory state:
-
-```sql
-SELECT node,status,deleted_at FROM node_inventory WHERE node='NODE';
-SELECT node,vm_uuid,status,deleted_at FROM vm_inventory WHERE vm_uuid='UUID';
-```
-
-Then bypass page cache once while diagnosing:
-
-```text
-/?_nocache=1
-/storage?_nocache=1
-```

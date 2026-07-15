@@ -71,7 +71,7 @@ def main() -> int:
         result = module.run_retention(dry_run=False)
         print(json.dumps({
             "ok": True,
-            "version": "50.1.2-prod-r1-snapshot-time-fix",
+            "version": "50.0.4-prod-r1-one-command",
             "started_at": started,
             "finished_at": int(time.time()),
             "result": result,

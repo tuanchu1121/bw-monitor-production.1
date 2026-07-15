@@ -9,10 +9,8 @@ set -Eeuo pipefail
 : "${BW_GUNICORN_MAX_REQUESTS:=3000}"
 : "${BW_GUNICORN_MAX_REQUESTS_JITTER:=300}"
 : "${BW_GUNICORN_LOG_LEVEL:=info}"
-: "${BW_GUNICORN_WORKER_TMP_DIR:=/dev/shm}"
 exec /opt/bw-monitor/venv/bin/gunicorn \
   --chdir /opt/bw-monitor \
-  --worker-tmp-dir "$BW_GUNICORN_WORKER_TMP_DIR" \
   --bind "$BW_GUNICORN_BIND" \
   --workers "$BW_GUNICORN_WORKERS" \
   --worker-class gthread \
