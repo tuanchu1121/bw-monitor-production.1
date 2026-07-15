@@ -71,7 +71,7 @@ def main() -> int:
         result = module.run_retention(dry_run=False)
         print(json.dumps({
             "ok": True,
-            "version": "50.2.3-prod-r1-dashboard-snapshot-fix",
+            "version": "50.3.0-prod-r1-bandwidth-consumption",
             "started_at": started,
             "finished_at": int(time.time()),
             "result": result,

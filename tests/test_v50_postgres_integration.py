@@ -141,6 +141,33 @@ assert response.get_json().get("ok") is True
 response2 = client.post("/push", json=payload, headers={"X-Token": "v50-integration-token"})
 assert response2.status_code == 200 and response2.get_json().get("duplicate") is True
 
+# Compact node-only Bandwidth Consumption ingest. No VM UUID is present.
+bw_end = module._v5030_local_bucket_start(now)
+bw_start = bw_end - module.V5030_BW_BUCKET_SECONDS
+bw_payload = {
+    "node": "V50-TEST-NODE",
+    "bucket_start": bw_start,
+    "bucket_end": bw_end,
+    "physical_public_rx_bytes": 1000,
+    "physical_public_tx_bytes": 2000,
+    "physical_private_rx_bytes": 3000,
+    "physical_private_tx_bytes": 4000,
+    "vm_public_rx_bytes": 900,
+    "vm_public_tx_bytes": 1800,
+    "vm_private_rx_bytes": 2500,
+    "vm_private_tx_bytes": 3500,
+    "coverage_seconds": 7200,
+    "sample_count": 24,
+    "estimated": 0,
+    "agent_version": 13,
+}
+bw_response = client.post("/push/bandwidth-consumption", json=bw_payload, headers={"X-Token": "v50-integration-token"})
+assert bw_response.status_code == 200, bw_response.get_data(as_text=True)
+assert bw_response.get_json().get("ok") is True
+# Retry is an idempotent UPSERT, not a second row.
+bw_retry = client.post("/push/bandwidth-consumption", json=bw_payload, headers={"X-Token": "v50-integration-token"})
+assert bw_retry.status_code == 200 and bw_retry.get_json().get("ok") is True
+
 with client.session_transaction() as sess:
     sess["dashboard_authenticated"] = True
     sess["dashboard_username"] = "admin"
@@ -151,7 +178,8 @@ with client.session_transaction() as sess:
 
 paths = [
     "/", "/top", "/top?period=10m", "/top?period=30m", "/top?period=1h",
-    "/abuse/vms", "/storage", "/node/V50-TEST-NODE",
+    "/abuse/vms", "/storage", "/bandwidth-consumption",
+    "/bandwidth-consumption/node/V50-TEST-NODE", "/node/V50-TEST-NODE",
     f"/vm?node=V50-TEST-NODE&vm_uuid={vm_uuid}", "/api/v1/performance",
     "/admin?section=overview",
 ]
@@ -183,6 +211,7 @@ try:
         "node_stats": "SELECT count(*) FROM node_stats WHERE node=? AND vm_uuid=?",
         "vm_perf_stats": "SELECT count(*) FROM vm_perf_stats WHERE node=? AND vm_uuid=?",
         "node_push_snapshots": "SELECT count(*) FROM node_push_snapshots WHERE node=?",
+        "node_bandwidth_consumption_2h": "SELECT count(*) FROM node_bandwidth_consumption_2h WHERE node=?",
     }
     for table, sql in checks.items():
         params = ("V50-TEST-NODE", vm_uuid) if "vm_uuid" in sql else ("V50-TEST-NODE",)

@@ -33,6 +33,7 @@ agent_health_stats
 node_push_snapshots
 bandwidth_hourly
 bandwidth_daily
+node_bandwidth_consumption_2h
 ```
 
 Fresh installation converts supported history tables into Timescale hypertables with integer Unix-time partitioning. BRIN indexes support time pruning while existing B-tree indexes support exact Node/UUID lookups.
@@ -100,3 +101,11 @@ SELECT relname, n_live_tup, n_dead_tup
 FROM pg_stat_user_tables
 ORDER BY n_live_tup DESC;
 ```
+## Node-only Bandwidth Consumption table
+
+`node_bandwidth_consumption_2h` stores one row per node and completed local 2-hour bucket. The row contains eight counters only: Physical Public/Private RX/TX and aggregate VM Public/Private RX/TX, plus coverage and receive metadata. It does not store VM UUIDs.
+
+At 200 nodes the normal ingest rate is 2,400 rows/day and the strict 7-day working set is about 16,800 rows. The table is intentionally a normal PostgreSQL table rather than a hypertable because the bounded working set is tiny.
+
+The primary key `(node, bucket_start)` makes Agent retries idempotent. `Reset ALL app data + queue` clears the table and advances `bandwidth_consumption_accept_after`, causing pre-reset retry buckets to be acknowledged and ignored.
+

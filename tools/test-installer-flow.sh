@@ -8,7 +8,7 @@ for f in "$ROOT/install.sh" "$ROOT/update.sh" "$I" "$ROOT/deploy/postgres/bw-mon
   bash -n "$f"
 done
 
-grep -q 'RELEASE="50.2.3-prod-r1-dashboard-snapshot-fix"' "$I" || fail "release marker missing"
+grep -q 'RELEASE="50.3.0-prod-r1-bandwidth-consumption"' "$I" || fail "release marker missing"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$ROOT/install.sh" || fail "default GitHub repository is wrong"
 grep -q 'deploy/postgres/install-postgres-native.sh' "$ROOT/install.sh" || fail "bootstrap does not launch PostgreSQL-native installer"
 grep -q 'repo_complete()' "$ROOT/install.sh" || fail "bootstrap repository validation missing"
@@ -33,6 +33,8 @@ grep -q 'pg_restore' "$ROOT/deploy/postgres/restore.sh" || fail "pg_restore rest
 grep -q 'timescaledb_pre_restore' "$ROOT/deploy/postgres/restore.sh" || fail "Timescale pre-restore hook missing"
 grep -q 'timescaledb_post_restore' "$ROOT/deploy/postgres/restore.sh" || fail "Timescale post-restore hook missing"
 grep -q 'ProtectHome=read-only' "$ROOT/deploy/agent/install-agent.sh" || fail "Agent /home visibility fix missing"
+grep -q "BW_AGENT_BANDWIDTH_CONSUMPTION_ENABLED='1'" "$ROOT/deploy/agent/install-agent.sh" || fail "Bandwidth Consumption Agent default missing"
+grep -q 'BW_AGENT_BANDWIDTH_CONSUMPTION_ENABLED="1"' "$ROOT/ansible/deploy-agent.yml" || fail "Bandwidth Consumption Ansible default missing"
 grep -q 'become: "{{ (ansible_user | default('"'"'root'"'"')) != '"'"'root'"'"' }}"' "$ROOT/ansible/deploy-agent.yml" || fail "Ansible root/sudo behavior missing"
 
 for doc in README.md docs/README_VI.md docs/INSTALL.md docs/DOMAIN.md docs/MANAGEMENT.md docs/DATABASE.md docs/BACKUP_RESTORE.md docs/ANSIBLE.md docs/UPGRADE.md docs/TROUBLESHOOTING.md docs/PUBLISHING.md; do

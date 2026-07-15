@@ -135,6 +135,8 @@
           BW_AGENT_COLLECT_NODE_HOST="1"
           BW_AGENT_COLLECT_PHYSICAL_NET="1"
           BW_AGENT_BRIDGE_ROLES={{ bwagent_bridge_roles | to_json }}
+          BW_AGENT_BANDWIDTH_CONSUMPTION_ENABLED="1"
+          BW_AGENT_BANDWIDTH_CONSUMPTION_JITTER_SECONDS="240"
           BW_AGENT_API_TIMEOUT="30"
           BW_AGENT_DOMSTATS_TIMEOUT="180"
           BW_AGENT_VIRSH_LIST_TIMEOUT="30"
@@ -211,6 +213,7 @@
         msg:
           - "{{ inventory_hostname }}: virtinfra-agent.service={{ bwagent_active.stdout }}"
           - "Sample={{ bwagent_sample_seconds }}s; push={{ bwagent_push_seconds }}s"
+          - "Bandwidth Consumption: compact node totals every completed local 2h bucket"
           - "Logs: journalctl -u virtinfra-agent.service -n 50 --no-pager"
 
   handlers:

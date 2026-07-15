@@ -9,7 +9,7 @@ def need(cond: bool, message: str) -> None:
         raise AssertionError(message)
 
 version = (ROOT / "VERSION").read_text().strip()
-need(version == "50.2.3-prod-r1-dashboard-snapshot-fix", f"unexpected VERSION: {version}")
+need(version == "50.3.0-prod-r1-bandwidth-consumption", f"unexpected VERSION: {version}")
 
 app = (ROOT / "app/app.py").read_text()
 pg = (ROOT / "app/bw_pg.py").read_text()
@@ -108,5 +108,23 @@ agent_install = (ROOT / "deploy/agent/install-agent.sh").read_text(encoding="utf
 need("VirtInfra Agent v13" in agent and "VirtInfra-Agent/13" in agent, "VirtInfra Agent identity missing")
 need("virtinfra-agent.service" in agent_install and "/var/lib/virtinfra-agent" in agent_install, "canonical Agent service/path missing")
 need((ROOT / "deploy/postgres/virtinfra-monitor-health-watch.timer").exists(), "health watchdog timer missing")
+
+# v50.3.0 compact Bandwidth Consumption is additive and node-level only.
+need("<a href=\"{url_for('bandwidth_consumption_page')}\">Bandwidth Consumption</a>" in app, "Bandwidth Consumption nav item missing")
+need(app.index('bandwidth_consumption_page') > app.index('storage_io_page'), "Bandwidth Consumption must be after Storage I/O")
+need('@app.route("/push/bandwidth-consumption", methods=["POST"])' in app, "compact bandwidth endpoint missing")
+need('node_bandwidth_consumption_2h' in app, "compact bandwidth table missing")
+need('V5030_BW_RETENTION_SECONDS = 7 * 86400' in app, "7-day bandwidth retention missing")
+need('physical_public_rx_bytes' in app and 'physical_private_rx_bytes' in app, "physical Public/Private counters missing")
+need('vm_public_rx_bytes' in app and 'vm_private_rx_bytes' in app, "aggregate VM Public/Private counters missing")
+need('No per-VM UUID history is stored' in app, "node-only accounting contract missing")
+need('BANDWIDTH_CONSUMPTION_BUCKET_SECONDS' in agent, "Agent 2-hour accounting module missing")
+need('account_bandwidth_consumption(runtime, payload)' in agent, "Agent accounting is not connected to the existing cycle")
+need('send_bandwidth_consumption_pending(runtime, allow_wait=True)' in agent, "Agent compact flush is not connected")
+need('@app.route("/bandwidth-consumption/node/<path:node>")' in app, "Bandwidth Consumption node detail missing")
+need('V48102_RESET_APP_TABLES = tuple(dict.fromkeys(tuple(V48102_RESET_APP_TABLES) + (V5030_BW_TABLE,)))' in app, "Reset ALL does not include bandwidth table")
+need('bandwidth_consumption_accept_after' in app, "reset epoch protection missing")
+need('Host vnet TX is traffic' in agent and 'Normalize to the VM/guest perspective' in agent, "VM RX/TX normalization missing")
+need('"vm_uuid"' not in agent.split('def _bandwidth_consumption_enqueue',1)[1].split('def account_bandwidth_consumption',1)[0], "bandwidth queue payload must not contain VM UUID")
 
 print("PASS: v50 static product contract")

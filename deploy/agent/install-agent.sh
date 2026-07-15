@@ -87,6 +87,8 @@ BW_AGENT_COLLECT_VM_PERF='1'
 BW_AGENT_COLLECT_NODE_HOST='1'
 BW_AGENT_COLLECT_PHYSICAL_NET='1'
 BW_AGENT_BRIDGE_ROLES='$BRIDGE_ROLES'
+BW_AGENT_BANDWIDTH_CONSUMPTION_ENABLED='1'
+BW_AGENT_BANDWIDTH_CONSUMPTION_JITTER_SECONDS='240'
 BW_AGENT_API_TIMEOUT='30'
 BW_AGENT_DOMSTATS_TIMEOUT='180'
 BW_AGENT_VIRSH_LIST_TIMEOUT='30'
@@ -144,6 +146,7 @@ Service:       virtinfra-agent.service (active)
 Monitor API:   $API
 Sample:        ${SAMPLE_SECONDS}s
 Push:          ${PUSH_SECONDS}s
+Bandwidth:     compact node totals every completed local 2h bucket
 Environment:   $ENV_FILE (0600)
 State:         $STATE_DIR
 Logs:          journalctl -fu virtinfra-agent.service

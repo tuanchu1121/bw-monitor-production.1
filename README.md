@@ -2,7 +2,7 @@
 
 Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-> Release: `50.2.3-prod-r1-dashboard-snapshot-fix`
+> Release: `50.3.0-prod-r1-bandwidth-consumption`
 
 > **Canonical-source bootstrap:** the installer verifies `SHA256SUMS` and stages only files in the release manifest. Old v48/v49 folders accidentally left in a GitHub Desktop repository are ignored during installation.
 
@@ -14,8 +14,10 @@ Production monitoring for KVM/libvirt nodes and virtual machines. This repositor
 KVM/libvirt node
   └─ virtinfra-agent.service
        ├─ samples local counters every 15 seconds
-       ├─ builds one durable 5-minute payload
-       └─ POST /push every 300 seconds
+       ├─ builds one durable 5-minute operational payload
+       ├─ accumulates node-only Public/Private RX/TX locally
+       ├─ POST /push every 300 seconds
+       └─ POST /push/bandwidth-consumption once per completed local 2-hour bucket
                     │
                     ▼
          Nginx :443 or public IP:8080
@@ -55,6 +57,23 @@ The Agent behavior is unchanged:
 - Scoped REST API keys, Allowed IP/CIDR and rate limits
 - Dark/light UI and existing route compatibility
 - Agent deployment through one-command installer or Ansible
+- Bandwidth Consumption after Storage I/O: separate Physical Public, Physical Private, aggregate VM Public and aggregate VM Private RX/TX, node search/filter/sort, coverage and 7-day retention
+
+## Bandwidth Consumption
+
+The new page is placed immediately after **Storage I/O**. It is intentionally isolated from the existing 5-minute monitoring and Abuse paths.
+
+- one compact request per node for each completed local 2-hour bucket;
+- no VM UUIDs and no per-VM bandwidth history;
+- Physical Public, Physical Private, aggregate VM Public and aggregate VM Private stay separate;
+- RX, TX and RX+TX total are shown only within the same network section;
+- Public and Private differences are calculated separately;
+- hidden nodes are excluded from search, filters, tables, summary cards and coverage without deleting their history;
+- ranges: 2H, 6H, 12H, 1D through 7D;
+- rows older than 7 days are deleted by retention;
+- Admin cleanup, clear-history and Reset ALL integration are included.
+
+Agent `runtime.json` durably stores the current accumulator and retry list. A full reset advances a Monitor-side acceptance epoch so old Agent retries cannot recreate deleted history.
 
 ## New server, public IP
 
