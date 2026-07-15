@@ -28184,7 +28184,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.0.1-prod-r1-one-command",
+            "version":"50.0.2-prod-r1-one-command",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),

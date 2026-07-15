@@ -1,5 +1,12 @@
 # Changelog
 
+## 50.0.2-prod-r1-one-command
+
+- Stage installs from the canonical `SHA256SUMS` manifest, so stale v48/v49 files left by Windows Explorer or GitHub Desktop are ignored.
+- Verify every canonical source file before installing.
+- Keep the release preflight strict while making the one-command bootstrap resilient to dirty merged repositories.
+- Preserve support for non-executable `.sh` files published from Windows.
+
 ## 50.0.1-prod-r1-one-command
 
 - Fixed one-command GitHub installation when a release is published from Windows GitHub Desktop and shell files do not retain the Linux executable bit.
