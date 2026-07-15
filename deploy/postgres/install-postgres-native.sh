@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="50.0.0-prod-r1-postgres-native"
+RELEASE="50.0.1-prod-r1-one-command"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 APP_SRC="$REPO_ROOT/app"
@@ -188,10 +188,7 @@ if ((REDIS_CACHE)); then
 fi
 if ((SKIP_PREFLIGHT==0)); then
   log "Run v50 source and deployment preflight"
-  BW_PREFLIGHT_PYTHON="$APP_DIR/venv/bin/python3" \
-  bash "$REPO_ROOT/preflight.sh" \
-  --use-current-python \
-  --skip-live
+  BW_PREFLIGHT_PYTHON="$APP_DIR/venv/bin/python3" bash "$REPO_ROOT/preflight.sh" --use-current-python --skip-live
 fi
 
 if [[ -n "$ADMIN_PASSWORD" ]]; then
@@ -252,9 +249,9 @@ for i in $(seq 1 90); do
   sleep 2
 done
 
-if ((UPDATE)) && [[ -x "$APP_DIR/backup.sh" ]]; then
+if ((UPDATE)) && [[ -f "$APP_DIR/backup.sh" ]]; then
   log "Create PostgreSQL backup before update"
-  "$APP_DIR/backup.sh"
+  bash "$APP_DIR/backup.sh"
 fi
 
 log "Install full application code"

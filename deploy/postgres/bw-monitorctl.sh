@@ -8,12 +8,12 @@ case "$CMD" in
     systemctl status bw-monitor.service bw-monitor-retention.timer docker --no-pager -l || true
     echo; docker ps --filter name=bw-timescaledb
     ;;
-  doctor) exec "$APP/doctor.sh" "$@" ;;
-  audit) exec "$APP/audit.sh" "$@" ;;
-  db-check|database) exec "$APP/db-check.sh" "$@" ;;
-  backup) exec "$APP/backup.sh" "$@" ;;
-  restore) exec "$APP/restore.sh" "$@" ;;
-  diagnostics) exec "$APP/collect-diagnostics.sh" "$@" ;;
+  doctor) exec bash "$APP/doctor.sh" "$@" ;;
+  audit) exec bash "$APP/audit.sh" "$@" ;;
+  db-check|database) exec bash "$APP/db-check.sh" "$@" ;;
+  backup) exec bash "$APP/backup.sh" "$@" ;;
+  restore) exec bash "$APP/restore.sh" "$@" ;;
+  diagnostics) exec bash "$APP/collect-diagnostics.sh" "$@" ;;
   logs)
     target="${1:-monitor}"; lines="${2:-200}"
     case "$target" in

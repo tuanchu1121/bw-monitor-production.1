@@ -8,9 +8,14 @@ for f in "$ROOT/install.sh" "$ROOT/update.sh" "$I" "$ROOT/deploy/postgres/bw-mon
   bash -n "$f"
 done
 
-grep -q 'RELEASE="50.0.0-prod-r1-postgres-native"' "$I" || fail "release marker missing"
+grep -q 'RELEASE="50.0.1-prod-r1-one-command"' "$I" || fail "release marker missing"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$ROOT/install.sh" || fail "default GitHub repository is wrong"
 grep -q 'deploy/postgres/install-postgres-native.sh' "$ROOT/install.sh" || fail "bootstrap does not launch PostgreSQL-native installer"
+grep -q 'repo_complete()' "$ROOT/install.sh" || fail "bootstrap repository validation missing"
+grep -q 'normalize_shell_modes()' "$ROOT/install.sh" || fail "Windows GitHub Desktop mode normalization missing"
+grep -Fq 'exec bash "$ROOT/deploy/postgres/install-postgres-native.sh"' "$ROOT/install.sh" || fail "downloaded installer is not invoked through bash"
+grep -Fq 'bash "$REPO_ROOT/preflight.sh"' "$I" || fail "installer preflight still depends on executable mode"
+grep -Fq 'bash ./tools/test-installer-flow.sh' "$ROOT/preflight.sh" || fail "preflight child script still depends on executable mode"
 grep -q -- '--public-ip' "$I" || fail "public IP mode missing"
 grep -q -- '--domain' "$I" || fail "domain mode missing"
 grep -q -- '--ip-mode' "$I" || fail "domain-to-IP switch missing"

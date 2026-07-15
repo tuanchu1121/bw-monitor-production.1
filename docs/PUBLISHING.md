@@ -2,19 +2,23 @@
 
 The root of the repository must contain `install.sh`, `app/`, `postgres/`, `deploy/`, `ansible/`, `tests/` and `docs/`.
 
+## Windows + GitHub Desktop
+
+Copy the complete extracted release tree into the local repository opened by GitHub Desktop, commit to `main`, and push. This release does not depend on Git executable-bit metadata. The Linux bootstrap invokes source scripts through `bash` and normalizes modes after download.
+
 ## Replace an existing checkout
 
 Assume:
 
 ```text
 checkout: /.data/agent
-archive:  /root/bw-monitor-50.0.0-prod-r1-postgres-native-github-production.zip
+archive:  /root/bw-monitor-50.0.1-prod-r1-one-command-github-production.zip
 ```
 
 ```bash
 set -euo pipefail
 
-ZIP=/root/bw-monitor-50.0.0-prod-r1-postgres-native-github-production.zip
+ZIP=/root/bw-monitor-50.0.1-prod-r1-one-command-github-production.zip
 REPO=/.data/agent
 TMP=/tmp/bw-monitor-v50-publish
 
@@ -55,7 +59,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Expected:
 
 ```text
-50.0.0-prod-r1-postgres-native
+50.0.1-prod-r1-one-command
 ```
 
 ## Secret review

@@ -1,5 +1,13 @@
 # Changelog
 
+## 50.0.1-prod-r1-one-command
+
+- Fixed one-command GitHub installation when a release is published from Windows GitHub Desktop and shell files do not retain the Linux executable bit.
+- Replaced executable-mode completeness checks with explicit required-file validation.
+- Normalized shell modes after GitHub tarball extraction while invoking all source scripts explicitly through `bash`.
+- Hardened preflight, release audit, wrappers, management helpers and GitHub Actions against file-mode differences.
+- Added a release test that simulates every `.sh` file being published as mode `0644`.
+
 ## 50.0.0-prod-r1-postgres-native
 
 - Preserved the complete production UI, Agent protocol, Abuse Engine, storage/disk views, Admin workflow and scoped REST API.

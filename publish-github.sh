@@ -44,7 +44,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 if ((SKIP_AUDIT == 0)); then
-  ./tools/release-audit.sh
+  bash ./tools/release-audit.sh
 fi
 
 [[ -d .git ]] || git init -b main
@@ -64,7 +64,7 @@ else
 fi
 
 if ((CREATE_RELEASE)); then
-  ./tools/build-dist.sh
+  bash ./tools/build-dist.sh
   git tag -f "$TAG"
   git push origin "$TAG" --force
   mapfile -t assets < <(find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name 'SHA256SUMS' \) | sort)

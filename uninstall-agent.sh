@@ -24,4 +24,4 @@ else
     -o "$TMP/uninstall-agent.sh"
 fi
 chmod +x "$TMP/uninstall-agent.sh"
-exec "$TMP/uninstall-agent.sh" "$@"
+exec bash "$TMP/uninstall-agent.sh" "$@"
