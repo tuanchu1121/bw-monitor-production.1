@@ -1,6 +1,12 @@
 # Changelog
 
-## 50.0.3-prod-r1-one-command
+## 50.0.4-prod-r1-one-command
+
+- Fixed Abuse Policy save/create on PostgreSQL. `abuse_policy_versions` is keyed by `revision` and is no longer incorrectly treated as an `id`-serial table.
+- Made legacy `BEGIN` and `BEGIN IMMEDIATE` compatibility statements transaction no-ops under psycopg, removing duplicate transaction warnings while preserving commit/rollback semantics.
+- Added static and live PostgreSQL regression coverage for creating an Abuse policy version.
+
+## 50.0.4-prod-r1-one-command
 
 - Fix PostgreSQL `GroupingError` on the Node Health dashboard caused by grouping the computed physical-network role by the conflicting input column name.
 - Group the normalized physical-network role by output position (`GROUP BY np.node, 2`), which is valid on PostgreSQL and remains compatible with the legacy query shape.

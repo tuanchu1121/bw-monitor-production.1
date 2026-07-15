@@ -157,8 +157,15 @@ for path in paths:
     result = client.get(path)
     assert result.status_code == 200, f"{path}: {result.status_code} {result.get_data(as_text=True)[:500]}"
 
+# Regression: abuse_policy_versions uses revision as its primary key and has no
+# id column. Saving a policy must not receive an automatic RETURNING id suffix.
+policy = module._v4810_save_policy({}, "integration-admin", "save")
+assert int(policy.get("revision") or 0) >= 1
+
 conn = module.db()
 try:
+    policy_count = int(conn.execute("SELECT count(*) FROM abuse_policy_versions").fetchone()[0])
+    assert policy_count >= 1, "abuse policy version was not saved"
     checks = {
         "vm_current_fast": "SELECT count(*) FROM vm_current_fast WHERE node=? AND vm_uuid=?",
         "vm_disk_current": "SELECT count(*) FROM vm_disk_current WHERE node=? AND vm_uuid=?",

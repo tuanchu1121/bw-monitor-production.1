@@ -59,7 +59,7 @@ _SERIAL_TABLES = {
     # Only tables whose callers actually consume Cursor.lastrowid. Keeping this
     # list small avoids a RETURNING round trip on high-volume metric inserts.
     "maintenance_jobs", "retention_runs", "dashboard_users", "api_keys",
-    "vm_abuse_events", "vm_abuse_incidents", "abuse_policy_versions",
+    "vm_abuse_events", "vm_abuse_incidents",
 }
 
 _RE_QMARK = re.compile(r"\?")
@@ -671,17 +671,12 @@ class CompatCursor:
             return self
         if self._pragma(stripped):
             return self
-        if re.match(r"^\s*BEGIN\s+IMMEDIATE\b", stripped, re.I):
-            # psycopg starts a transaction automatically.  BEGIN is only needed
-            # when the connection is idle; otherwise the current transaction is
-            # already stricter than SQLite's BEGIN IMMEDIATE intent.
-            if self._owner._raw.info.transaction_status == psycopg.pq.TransactionStatus.IDLE:
-                self._cursor.execute("BEGIN")
-            self.rowcount = -1
-            return self
-        if re.match(r"^\s*BEGIN\b", stripped, re.I):
-            if self._owner._raw.info.transaction_status == psycopg.pq.TransactionStatus.IDLE:
-                self._cursor.execute("BEGIN")
+        if re.match(r"^\s*BEGIN(?:\s+IMMEDIATE)?\b", stripped, re.I):
+            # psycopg automatically opens a transaction on the first real SQL
+            # statement. Legacy SQLite BEGIN / BEGIN IMMEDIATE statements are
+            # therefore compatibility no-ops. This avoids duplicate-BEGIN
+            # warnings on pooled connections while preserving atomic commit and
+            # rollback behavior for every following statement.
             self.rowcount = -1
             return self
         if re.match(r"^\s*VACUUM\b", stripped, re.I):
