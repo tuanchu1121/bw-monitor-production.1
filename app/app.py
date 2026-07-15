@@ -5551,7 +5551,9 @@ def get_top_vm_rows(period, q="", sort_by="total", order="desc", scope="all", li
           COALESCE((SELECT bai.primary_ipv4 FROM node_bridge_addresses_latest bai WHERE bai.node=ns.node AND LOWER(bai.role)='private' ORDER BY bai.last_seen DESC LIMIT 1),'') private_ipv4
         FROM node_stats ns LEFT JOIN node_inventory ni ON ni.node=ns.node LEFT JOIN vm_inventory vi ON vi.node=ns.node AND vi.vm_uuid=ns.vm_uuid LEFT JOIN perf p ON p.node=ns.node AND p.vm_uuid=ns.vm_uuid
         WHERE ns.bucket=? AND (ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL)) AND COALESCE(vi.status,'active')!='hidden' {extra_sql}
-        GROUP BY ns.node,ns.vm_uuid HAVING total>0 ORDER BY {order_sql} {order.upper()},total DESC,ns.node COLLATE NOCASE ASC,ns.vm_uuid COLLATE NOCASE ASC LIMIT ?
+        GROUP BY ns.node,ns.vm_uuid
+        HAVING SUM(COALESCE(ns.rx_delta,0)+COALESCE(ns.tx_delta,0))>0
+        ORDER BY {order_sql} {order.upper()},total DESC,ns.node COLLATE NOCASE ASC,ns.vm_uuid COLLATE NOCASE ASC LIMIT ?
         """,params).fetchall()
         return rows,selected_bucket,latest_bucket,limit
     finally:conn.close()
@@ -28042,8 +28044,8 @@ def _v48140_response_performance(response):
         response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
         response.headers["X-VirtInfra-App-Time-Ms"] = f"{duration_ms:.1f}"
         response.headers["X-BW-App-Time-Ms"] = f"{duration_ms:.1f}"
-    response.headers["X-VirtInfra-Performance"] = "50.2.0-virtinfra-hardening"
-    response.headers["X-BW-Performance"] = "50.2.0-virtinfra-hardening"
+    response.headers["X-VirtInfra-Performance"] = "50.2.1-csrf-topvm-fix"
+    response.headers["X-BW-Performance"] = "50.2.1-csrf-topvm-fix"
     if (
         response.status_code == 200
         and not response.direct_passthrough
@@ -28267,7 +28269,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.2.0-prod-r1-virtinfra-hardening",
+            "version":"50.2.1-prod-r1-csrf-topvm-fix",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28362,7 +28364,7 @@ def _v48139_current_rows(values):
 
 
 # ---------------------------------------------------------------------------
-# VirtInfra Monitor v50.2.0 product identity and production hardening
+# VirtInfra Monitor v50.2.1 CSRF and Top VM historical-period fix
 # ---------------------------------------------------------------------------
 
 _VIRTINFRA_TZ_CACHE = {"name": None, "expires": 0.0}
@@ -28536,6 +28538,7 @@ def _v490_admin_overview(stats):
       <div class="section-head"><div><h3>Display timezone</h3><p>Changes presentation only. PostgreSQL timestamps, retention and snapshot identity remain absolute.</p></div></div>
       {saved}
       <form method="post" action="{url_for('admin_display_timezone_virtinfra')}" class="custom-time-form">
+        <input type="hidden" name="csrf_token" value="{escape(csrf_token(), quote=True)}">
         <label>Timezone<select name="timezone">{options}</select></label>
         <button type="submit">Save timezone</button>
       </form>

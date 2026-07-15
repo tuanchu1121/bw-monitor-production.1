@@ -3,7 +3,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 app=(root/'app/app.py').read_text()
 agent=(root/'deploy/agent/agent.py').read_text()
-assert (root/'VERSION').read_text().strip() == '50.2.0-prod-r1-virtinfra-hardening'
+assert (root/'VERSION').read_text().strip() == '50.2.1-prod-r1-csrf-topvm-fix'
 assert 'VirtInfra Monitor' in app
 assert 'WAL reserved/recycled' in app
 assert 'SHM {human' not in app
@@ -15,6 +15,9 @@ assert "COALESCE(svi.status, 'active')!='hidden'" in app
 assert 'page_cache_generation' in app
 assert 'VirtInfra Agent v13' in agent and 'VirtInfra-Agent/13' in agent
 assert 'VIRTINFRA_AGENT_API' in agent
+assert 'name="csrf_token" value="{escape(csrf_token(), quote=True)}"' in app
+assert 'HAVING total>0' not in app
+assert 'HAVING SUM(COALESCE(ns.rx_delta,0)+COALESCE(ns.tx_delta,0))>0' in app
 
 assert 'DB + WAL' not in app
 assert '"timezone":display_timezone_name()' in app
@@ -25,4 +28,4 @@ assert 'systemctl is-active virtinfra-agent.service' in playbook
 assert 'systemctl is-active bwagent.service' not in playbook
 readme=(root/'README.md').read_text()
 assert 'virtinfra-agent.service' in readme
-print('PASS: VirtInfra Monitor v50.2 hardening contract')
+print('PASS: VirtInfra Monitor v50.2.1 CSRF and Top VM history contract')

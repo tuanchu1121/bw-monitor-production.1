@@ -150,12 +150,30 @@ with client.session_transaction() as sess:
     sess["csrf_token"] = "test-csrf"
 
 paths = [
-    "/", "/top", "/abuse/vms", "/storage", "/node/V50-TEST-NODE",
+    "/", "/top", "/top?period=10m", "/top?period=30m", "/top?period=1h",
+    "/abuse/vms", "/storage", "/node/V50-TEST-NODE",
     f"/vm?node=V50-TEST-NODE&vm_uuid={vm_uuid}", "/api/v1/performance",
+    "/admin?section=overview",
 ]
 for path in paths:
     result = client.get(path)
     assert result.status_code == 200, f"{path}: {result.status_code} {result.get_data(as_text=True)[:500]}"
+
+# Regression: the timezone form must include the session CSRF token and the
+# POST must succeed with it. The same endpoint must reject a missing token.
+overview = client.get("/admin?section=overview")
+overview_html = overview.get_data(as_text=True)
+assert 'action="/admin/display-timezone"' in overview_html
+assert 'name="csrf_token" value="test-csrf"' in overview_html
+bad_tz = client.post("/admin/display-timezone", data={"timezone": "UTC"})
+assert bad_tz.status_code == 403, bad_tz.get_data(as_text=True)
+good_tz = client.post(
+    "/admin/display-timezone",
+    data={"timezone": "UTC", "csrf_token": "test-csrf"},
+    follow_redirects=False,
+)
+assert good_tz.status_code == 302, good_tz.get_data(as_text=True)
+assert module.display_timezone_name() == "UTC"
 
 # Regression: abuse_policy_versions uses revision as its primary key and has no
 # id column. Saving a policy must not receive an automatic RETURNING id suffix.

@@ -12,13 +12,13 @@ Assume:
 
 ```text
 checkout: /.data/agent
-archive:  /root/bw-monitor-50.2.0-prod-r1-virtinfra-hardening-github-production.zip
+archive:  /root/bw-monitor-50.2.1-prod-r1-csrf-topvm-fix-github-production.zip
 ```
 
 ```bash
 set -euo pipefail
 
-ZIP=/root/bw-monitor-50.2.0-prod-r1-virtinfra-hardening-github-production.zip
+ZIP=/root/bw-monitor-50.2.1-prod-r1-csrf-topvm-fix-github-production.zip
 REPO=/.data/agent
 TMP=/tmp/bw-monitor-v50-publish
 
@@ -59,7 +59,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Expected:
 
 ```text
-50.2.0-prod-r1-virtinfra-hardening
+50.2.1-prod-r1-csrf-topvm-fix
 ```
 
 ## Secret review

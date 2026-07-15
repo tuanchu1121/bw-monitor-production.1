@@ -1,5 +1,11 @@
 # Changelog
 
+## 50.2.1-prod-r1-csrf-topvm-fix
+
+- Add the session CSRF token to the Display Timezone form.
+- Fix the PostgreSQL Top VM historical-period query by replacing the SQLite-only `HAVING total` alias with the full aggregate expression.
+- Extend live PostgreSQL regression coverage to Top VM 10m/30m/1h and the timezone POST workflow.
+
 ## 50.2.0-prod-r1-virtinfra-hardening
 
 - Renamed the public product to VirtInfra Monitor and the node collector to VirtInfra Agent.
