@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(cat "$ROOT/VERSION")"
-NAME="virtinfra-monitor-${VERSION}"
+NAME="bw-monitor-${VERSION}"
 DIST="$ROOT/dist"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

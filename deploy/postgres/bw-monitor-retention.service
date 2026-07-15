@@ -1,5 +1,5 @@
 [Unit]
-Description=VirtInfra Monitor exact 2-day raw / 7-day hourly PostgreSQL retention
+Description=BW Monitor exact 2-day raw / 7-day hourly PostgreSQL retention
 After=network-online.target docker.service bw-monitor.service
 Wants=network-online.target docker.service
 ConditionPathExists=/opt/bw-monitor/app.py

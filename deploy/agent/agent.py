@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VirtInfra Agent v13 daemon (per-disk storage I/O + monitor-synchronized abuse)
+bw-agent v12 daemon (per-disk storage I/O + monitor-synchronized abuse)
 
 Collects:
   1) VM/tap network traffic from libvirt domiflist + /sys/class/net/<tap>/statistics
@@ -31,10 +31,10 @@ import threading
 import stat
 from pathlib import Path
 
-API = os.environ.get("VIRTINFRA_AGENT_API") or os.environ.get("BW_AGENT_API", "http://103.199.19.207:8080/push")
-TOKEN = os.environ.get("VIRTINFRA_AGENT_TOKEN") or os.environ.get("BW_AGENT_TOKEN", "123456")
-STATE = os.environ.get("VIRTINFRA_AGENT_STATE") or os.environ.get("BW_AGENT_STATE", "/var/lib/virtinfra-agent/state.json")
-NODE_NAME = (os.environ.get("VIRTINFRA_AGENT_NODE") or os.environ.get("BW_AGENT_NODE") or os.uname().nodename).strip()
+API = os.environ.get("BW_AGENT_API", "http://103.199.19.207:8080/push")
+TOKEN = os.environ.get("BW_AGENT_TOKEN", "123456")
+STATE = os.environ.get("BW_AGENT_STATE", "/var/lib/bw-agent/state.json")
+NODE_NAME = (os.environ.get("BW_AGENT_NODE") or os.uname().nodename).strip()
 
 COLLECT_VM_NET = os.environ.get("BW_AGENT_COLLECT_VM_NET", "1") == "1"
 COLLECT_VM_PERF = os.environ.get("BW_AGENT_COLLECT_VM_PERF", "1") == "1"
@@ -58,8 +58,8 @@ DOMIFLIST_TIMEOUT = int(os.environ.get("BW_AGENT_DOMIFLIST_TIMEOUT", "30"))
 DRY_RUN = os.environ.get("BW_AGENT_DRY_RUN", "0") == "1"
 
 # Daemon scheduling. Sampling is local only; HTTP push remains every 5 minutes.
-SAMPLE_SECONDS = max(5, int(os.environ.get("VIRTINFRA_AGENT_SAMPLE_SECONDS") or os.environ.get("BW_AGENT_SAMPLE_SECONDS", "15")))
-PUSH_SECONDS = max(60, int(os.environ.get("VIRTINFRA_AGENT_PUSH_SECONDS") or os.environ.get("BW_AGENT_PUSH_SECONDS", "300")))
+SAMPLE_SECONDS = max(5, int(os.environ.get("BW_AGENT_SAMPLE_SECONDS", "15")))
+PUSH_SECONDS = max(60, int(os.environ.get("BW_AGENT_PUSH_SECONDS", "300")))
 MAX_LOAD = float(os.environ.get("BW_AGENT_MAX_LOAD", "160"))
 # Preserve the old agent behavior by default: high load is reported, but CPU/RAM/disk
 # collection is NOT silently removed. Set this to 1 only if you explicitly accept
@@ -68,10 +68,10 @@ SKIP_HEAVY_ON_OVERLOAD = os.environ.get("BW_AGENT_SKIP_HEAVY_ON_OVERLOAD", "0") 
 PPS_WARN = max(0.0, float(os.environ.get("BW_AGENT_PPS_WARN", "200000")))
 MBPS_WARN = max(0.0, float(os.environ.get("BW_AGENT_MBPS_WARN", "800")))
 STALE_IFACE_SECONDS = max(120, int(os.environ.get("BW_AGENT_STALE_IFACE_SECONDS", "600")))
-RUNTIME = os.environ.get("VIRTINFRA_AGENT_RUNTIME") or os.environ.get("BW_AGENT_RUNTIME", "/var/lib/virtinfra-agent/runtime.json")
+RUNTIME = os.environ.get("BW_AGENT_RUNTIME", "/var/lib/bw-agent/runtime.json")
 QUIET = os.environ.get("BW_AGENT_QUIET", "0") == "1"
 
-AGENT_VERSION = 13
+AGENT_VERSION = 12
 STOP_EVENT = threading.Event()
 
 
@@ -795,7 +795,7 @@ def _dedupe_filesystem_roots(rows):
     """Keep one real mount root per underlying filesystem.
 
     The agent runs inside a hardened systemd namespace.  `/etc`, `/usr`,
-    `/tmp`, `/var/lib/virtinfra-agent`, and similar paths may therefore appear as bind
+    `/tmp`, `/var/lib/bw-agent`, and similar paths may therefore appear as bind
     aliases of `/`.  They share the same MAJ:MIN and are deliberately collapsed
     to the shortest real mount, while a separate LVM `/home` remains because it
     has its own MAJ:MIN.
@@ -1728,7 +1728,7 @@ def run_push_cycle(sampler, runtime, committed_state):
                 committed_state = new_state
         except Exception as exc:
             if not QUIET:
-                print("virtinfra-agent pending push failed: %s" % exc, flush=True)
+                print("bwagent pending push failed: %s" % exc, flush=True)
             return committed_state
 
     payload, state_after = collect_cycle_payload(committed_state, runtime, runtime.get("carry"))
@@ -1756,7 +1756,7 @@ def run_push_cycle(sampler, runtime, committed_state):
                 quality = clean_quality(item.get("network_sample_quality"))
                 quality_counts[quality] = quality_counts.get(quality, 0) + 1
             print(
-                "virtinfra-agent push ok node=%s interfaces=%s vms=%s host=%s overloaded=%s skipped=%s errors=%s samples=%s" % (
+                "bwagent push ok node=%s interfaces=%s vms=%s host=%s overloaded=%s skipped=%s errors=%s samples=%s" % (
                     NODE_NAME,
                     len(payload.get("interfaces") or []),
                     len(payload.get("vms") or []),
@@ -1770,10 +1770,10 @@ def run_push_cycle(sampler, runtime, committed_state):
             )
             health_errors = payload.get("agent_health", {}).get("errors") or []
             if health_errors:
-                print("virtinfra-agent health warnings: %s" % " | ".join(str(x) for x in health_errors[:10]), flush=True)
+                print("bwagent health warnings: %s" % " | ".join(str(x) for x in health_errors[:10]), flush=True)
     except Exception as exc:
         if not QUIET:
-            print("virtinfra-agent push failed, payload kept for retry: %s" % exc, flush=True)
+            print("bwagent push failed, payload kept for retry: %s" % exc, flush=True)
     return committed_state
 
 
@@ -1826,7 +1826,7 @@ def post_payload(payload):
     req = urllib.request.Request(
         API,
         data=data,
-        headers={"Content-Type": "application/json", "X-Token": TOKEN, "User-Agent": "VirtInfra-Agent/13"},
+        headers={"Content-Type": "application/json", "X-Token": TOKEN},
     )
     return urllib.request.urlopen(req, timeout=API_TIMEOUT).read().decode()
 
@@ -1840,7 +1840,7 @@ def main():
     committed_state = load_state()
     sampler = NetworkSampler()
     sampler.update_known_ifaces(runtime.get("iface_map") or {})
-    thread = threading.Thread(target=sampler_loop, args=(sampler,), name="virtinfra-agent-net", daemon=True)
+    thread = threading.Thread(target=sampler_loop, args=(sampler,), name="bwagent-net", daemon=True)
     thread.start()
 
     # Give the sampler a baseline, then publish current heavy metrics immediately.

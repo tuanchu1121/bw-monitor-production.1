@@ -3,17 +3,17 @@
 Start with:
 
 ```bash
-virtinfra-monitorctl doctor
-virtinfra-monitorctl status
-virtinfra-monitorctl logs all 300
-virtinfra-monitorctl db-check
+bw-monitorctl doctor
+bw-monitorctl status
+bw-monitorctl logs all 300
+bw-monitorctl db-check
 ```
 
 ## Web not opening
 
 ```bash
-systemctl status virtinfra-monitor.service --no-pager -l
-journalctl -u virtinfra-monitor.service -n 300 --no-pager
+systemctl status bw-monitor --no-pager -l
+journalctl -u bw-monitor -n 300 --no-pager
 curl -I http://127.0.0.1:8080/login
 ```
 
@@ -38,9 +38,9 @@ Do not paste real passwords/tokens into public tickets.
 ## Agent does not appear
 
 ```bash
-systemctl status virtinfra-agent.service --no-pager -l
-journalctl -u virtinfra-agent.service -n 300 --no-pager
-cat /etc/virtinfra-agent.env
+systemctl status bwagent --no-pager -l
+journalctl -u bwagent -n 300 --no-pager
+cat /etc/bwagent.env
 ```
 
 Confirm endpoint, token, DNS/TLS and outbound connectivity. A new Agent normally appears after its next 300-second push.
@@ -52,7 +52,7 @@ Set `ansible_user=root`. The bundled playbook automatically disables privilege e
 ## `/home` missing from storage
 
 ```bash
-systemctl show virtinfra-agent.service -p ProtectHome
+systemctl show bwagent -p ProtectHome
 ```
 
 Expected:
@@ -67,7 +67,7 @@ Redeploy the Agent if it still says `true`.
 
 ```bash
 find /var/backups/bw-monitor -maxdepth 2 -name SHA256SUMS -print
-virtinfra-monitorctl logs postgres 300
+bw-monitorctl logs postgres 300
 ```
 
 The restore command creates a pre-restore dump before replacing the database.

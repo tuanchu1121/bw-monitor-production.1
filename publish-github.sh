@@ -53,7 +53,7 @@ if ! git config user.email >/dev/null; then git config user.email "${GIT_AUTHOR_
 
 git add -A
 if ! git diff --cached --quiet; then
-  git commit -m "VirtInfra Monitor $VERSION"
+  git commit -m "BW Monitor $VERSION"
 fi
 
 if gh repo view "$REPO" >/dev/null 2>&1; then
@@ -71,7 +71,7 @@ if ((CREATE_RELEASE)); then
   if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
     gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
   else
-    gh release create "$TAG" "${assets[@]}" --repo "$REPO" --title "VirtInfra Monitor $TAG" --generate-notes
+    gh release create "$TAG" "${assets[@]}" --repo "$REPO" --title "BW Monitor $TAG" --generate-notes
   fi
 fi
 

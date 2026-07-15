@@ -1,8 +1,8 @@
-# VirtInfra Monitor v50 PostgreSQL Native
+# BW Monitor v50 PostgreSQL Native
 
 Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-> Release: `50.2.1-prod-r1-csrf-topvm-fix`
+> Release: `50.0.4-prod-r1-one-command`
 
 > **Canonical-source bootstrap:** the installer verifies `SHA256SUMS` and stages only files in the release manifest. Old v48/v49 folders accidentally left in a GitHub Desktop repository are ignored during installation.
 
@@ -12,7 +12,7 @@ Production monitoring for KVM/libvirt nodes and virtual machines. This repositor
 
 ```text
 KVM/libvirt node
-  └─ virtinfra-agent.service
+  └─ bwagent.service
        ├─ samples local counters every 15 seconds
        ├─ builds one durable 5-minute payload
        └─ POST /push every 300 seconds
@@ -86,8 +86,8 @@ Credentials are written with root-only permissions to:
 Show URLs and credentials:
 
 ```bash
-virtinfra-monitorctl urls
-virtinfra-monitorctl credentials
+bw-monitorctl urls
+bw-monitorctl credentials
 ```
 
 ## New server, domain + HTTPS
@@ -114,7 +114,7 @@ The installer configures Nginx, obtains a Let's Encrypt certificate with Certbot
 cd /.data/agent
 git pull --ff-only
 
-read -rsp 'Enter VirtInfra Agent token: ' BW_TOKEN
+read -rsp 'Enter BW Agent token: ' BW_TOKEN
 echo
 
 bash ansible/deploy-agent.sh \
@@ -132,27 +132,27 @@ The playbook uses no `sudo` when `ansible_user=root`, keeps `ProtectHome=read-on
 ## Operations
 
 ```bash
-virtinfra-monitorctl status
-virtinfra-monitorctl doctor
-virtinfra-monitorctl db-check
-virtinfra-monitorctl logs all 200
-virtinfra-monitorctl follow monitor
-virtinfra-monitorctl backup
-virtinfra-monitorctl retention
-virtinfra-monitorctl psql
-virtinfra-monitorctl update
+bw-monitorctl status
+bw-monitorctl doctor
+bw-monitorctl db-check
+bw-monitorctl logs all 200
+bw-monitorctl follow monitor
+bw-monitorctl backup
+bw-monitorctl retention
+bw-monitorctl psql
+bw-monitorctl update
 ```
 
 Switch an existing IP deployment to domain HTTPS:
 
 ```bash
-virtinfra-monitorctl domain set monitor.example.com ops@example.com
+bw-monitorctl domain set monitor.example.com ops@example.com
 ```
 
 Switch back to IP mode:
 
 ```bash
-virtinfra-monitorctl domain remove 203.0.113.10 8080
+bw-monitorctl domain remove 203.0.113.10 8080
 ```
 
 ## Update
@@ -168,7 +168,7 @@ The update keeps the PostgreSQL volume, credentials, token, settings, domain/TLS
 ## Backup and restore
 
 ```bash
-virtinfra-monitorctl backup
+bw-monitorctl backup
 ```
 
 Backups are stored under:
@@ -180,7 +180,7 @@ Backups are stored under:
 Restore data:
 
 ```bash
-virtinfra-monitorctl restore \
+bw-monitorctl restore \
   --from /var/backups/bw-monitor/20260715-050000 \
   --yes
 ```
@@ -188,7 +188,7 @@ virtinfra-monitorctl restore \
 Restore data and protected configuration:
 
 ```bash
-virtinfra-monitorctl restore \
+bw-monitorctl restore \
   --from /var/backups/bw-monitor/20260715-050000 \
   --with-config \
   --yes
@@ -248,8 +248,3 @@ Release audit and archives:
 - [API](docs/API.md)
 - [Code guide](docs/CODE_GUIDE.md)
 - [Security](SECURITY.md)
-
-
-## Product identity and upgrade compatibility
-
-The public product name is **VirtInfra Monitor** and the node collector is **VirtInfra Agent**. New Agent deployments use `virtinfra-agent.service`, `/etc/virtinfra-agent.env`, `/usr/local/lib/virtinfra-agent`, and `/var/lib/virtinfra-agent`. The monitor keeps legacy internal `/opt/bw-monitor`, `BW_*`, and `bw-monitor.service` identifiers as compatibility anchors so an upgrade does not move the PostgreSQL data volume, invalidate existing automation, or break the one-command installer. Canonical operator commands are `virtinfra-monitorctl` and `virtinfra-agent-doctor`; the legacy `bw-monitorctl`, `bw-monitor.service`, `BW_*` and old Agent identifiers remain available only as upgrade/integration compatibility anchors.

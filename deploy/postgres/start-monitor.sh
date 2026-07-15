@@ -9,7 +9,6 @@ set -Eeuo pipefail
 : "${BW_GUNICORN_MAX_REQUESTS:=3000}"
 : "${BW_GUNICORN_MAX_REQUESTS_JITTER:=300}"
 : "${BW_GUNICORN_LOG_LEVEL:=info}"
-: "${BW_GUNICORN_WORKER_TMP_DIR:=/dev/shm}"
 exec /opt/bw-monitor/venv/bin/gunicorn \
   --chdir /opt/bw-monitor \
   --bind "$BW_GUNICORN_BIND" \
@@ -24,5 +23,4 @@ exec /opt/bw-monitor/venv/bin/gunicorn \
   --access-logfile "${BW_GUNICORN_ACCESS_LOG:--}" \
   --error-logfile "${BW_GUNICORN_ERROR_LOG:--}" \
   --log-level "$BW_GUNICORN_LOG_LEVEL" \
-  --worker-tmp-dir "$BW_GUNICORN_WORKER_TMP_DIR" \
   app:app

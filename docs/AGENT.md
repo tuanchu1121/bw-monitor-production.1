@@ -1,4 +1,4 @@
-# VirtInfra Agent
+# BW Agent
 
 The complete Agent source is `deploy/agent/agent.py`.
 
@@ -14,14 +14,14 @@ The Agent keeps a durable pending payload. On failure it retries the exact pendi
 Install one node:
 
 ```bash
-read -rsp 'VirtInfra Agent token: ' BW_TOKEN
+read -rsp 'BW Agent token: ' BW_TOKEN
 echo
 
 curl -fsSL \
 https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
 | env \
-VIRTINFRA_AGENT_API='https://monitor.example.com/push' \
-VIRTINFRA_AGENT_TOKEN="$BW_TOKEN" \
+BW_AGENT_API='https://monitor.example.com/push' \
+BW_AGENT_TOKEN="$BW_TOKEN" \
 bash
 
 unset BW_TOKEN
@@ -30,9 +30,9 @@ unset BW_TOKEN
 Check:
 
 ```bash
-systemctl status virtinfra-agent.service --no-pager -l
-journalctl -u virtinfra-agent.service -n 200 --no-pager
-systemctl show virtinfra-agent.service -p ProtectHome --value
+systemctl status bwagent --no-pager -l
+journalctl -u bwagent -n 200 --no-pager
+systemctl show bwagent -p ProtectHome --value
 ```
 
 Expected `ProtectHome=read-only`. This lets the service inspect `/home` while preserving systemd hardening.

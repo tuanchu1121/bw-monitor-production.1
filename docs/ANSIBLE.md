@@ -25,7 +25,7 @@ ansible all -i ansible/test.txt -m ping --forks 20
 Deploy/update Agent:
 
 ```bash
-read -rsp 'Nhập VirtInfra Agent token: ' BW_TOKEN
+read -rsp 'Nhập BW Agent token: ' BW_TOKEN
 echo
 
 bash ansible/deploy-agent.sh \

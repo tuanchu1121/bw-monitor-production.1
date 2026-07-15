@@ -18,11 +18,10 @@ if ((YES==0)); then
   [[ "$answer" == "$prompt" ]] || exit 1
 fi
 if [[ -x /opt/bw-monitor/backup.sh && $PURGE -eq 0 ]]; then /opt/bw-monitor/backup.sh || true; fi
-systemctl disable --now bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer virtinfra-monitor-health-watch.timer 2>/dev/null || true
+systemctl disable --now bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer 2>/dev/null || true
 rm -f /etc/systemd/system/bw-monitor.service /etc/systemd/system/bw-monitor-maintenance@.service \
       /etc/systemd/system/bw-monitor-retention.service /etc/systemd/system/bw-monitor-retention.timer \
-      /etc/systemd/system/bw-monitor-backup.service /etc/systemd/system/bw-monitor-backup.timer \
-      /etc/systemd/system/virtinfra-monitor-health-watch.service /etc/systemd/system/virtinfra-monitor-health-watch.timer
+      /etc/systemd/system/bw-monitor-backup.service /etc/systemd/system/bw-monitor-backup.timer
 systemctl daemon-reload
 rm -f /etc/nginx/sites-enabled/bw-monitor.conf /etc/nginx/sites-available/bw-monitor.conf
 command -v nginx >/dev/null && nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
@@ -43,6 +42,6 @@ if ((PURGE)); then
 else
   mv /opt/bw-monitor "/opt/bw-monitor.uninstalled.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
 fi
-rm -f /usr/local/sbin/bw-monitorctl /usr/local/sbin/bw-monitor-doctor /usr/local/sbin/virtinfra-monitorctl /usr/local/sbin/virtinfra-monitor-doctor
+rm -f /usr/local/sbin/bw-monitorctl /usr/local/sbin/bw-monitor-doctor
 if ((PURGE_CERT)) && [[ -n "${BW_DOMAIN:-}" ]] && command -v certbot >/dev/null; then certbot delete --non-interactive --cert-name "$BW_DOMAIN" || true; fi
-echo 'VirtInfra Monitor uninstalled.'
+echo 'BW Monitor uninstalled.'

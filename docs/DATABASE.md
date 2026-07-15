@@ -87,8 +87,8 @@ Measure production behavior before changing values.
 ## Inspect
 
 ```bash
-virtinfra-monitorctl db-check
-virtinfra-monitorctl psql
+bw-monitorctl db-check
+bw-monitorctl psql
 ```
 
 Useful SQL:

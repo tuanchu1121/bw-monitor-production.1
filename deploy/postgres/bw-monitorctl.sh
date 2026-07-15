@@ -5,27 +5,8 @@ APP=/opt/bw-monitor
 if [[ -r /etc/default/bw-monitor ]]; then set -a; . /etc/default/bw-monitor; set +a; fi
 case "$CMD" in
   status)
-    systemctl status bw-monitor.service bw-monitor-retention.timer virtinfra-monitor-health-watch.timer docker --no-pager -l || true
+    systemctl status bw-monitor.service bw-monitor-retention.timer docker --no-pager -l || true
     echo; docker ps --filter name=bw-timescaledb
-    ;;
-  health)
-    bind="${BW_GUNICORN_BIND:-127.0.0.1:${BW_PUBLIC_PORT:-8080}}"; port="${bind##*:}"
-    curl -fsS --max-time 5 "http://127.0.0.1:${port}/livez"; echo
-    curl -fsS --max-time 8 "http://127.0.0.1:${port}/healthz"; echo
-    ;;
-  timezone)
-    action="${1:-status}"; value="${2:-}"
-    set -a; . /etc/default/bw-monitor-postgres; set +a
-    case "$action" in
-      status) docker exec bw-timescaledb psql -At -U "$BW_PG_USER" -d "$BW_PG_DATABASE" -c "SELECT COALESCE((SELECT value FROM admin_settings WHERE key='display_timezone'),'Asia/Ho_Chi_Minh');" ;;
-      set)
-        case "$value" in UTC|Asia/Ho_Chi_Minh) ;; *) echo 'Use UTC or Asia/Ho_Chi_Minh' >&2; exit 2;; esac
-        docker exec bw-timescaledb psql -v ON_ERROR_STOP=1 -U "$BW_PG_USER" -d "$BW_PG_DATABASE" -c "INSERT INTO admin_settings(key,value,updated_at) VALUES('display_timezone','$value',EXTRACT(EPOCH FROM NOW())::bigint) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;"
-        systemctl restart bw-monitor.service
-        echo "Display timezone: $value"
-        ;;
-      *) echo 'Usage: virtinfra-monitorctl timezone status|set UTC|Asia/Ho_Chi_Minh' >&2; exit 2;;
-    esac
     ;;
   doctor) exec bash "$APP/doctor.sh" "$@" ;;
   audit) exec bash "$APP/audit.sh" "$@" ;;
@@ -88,7 +69,7 @@ Public URL: %s
 ' "${BW_DOMAIN:-<none>}" "${BW_TLS_ENABLED:-0}" "${BW_PUBLIC_URL:-}"
         ;;
       set)
-        domain="${1:?Usage: virtinfra-monitorctl domain set DOMAIN EMAIL}"; email="${2:?Usage: virtinfra-monitorctl domain set DOMAIN EMAIL}"
+        domain="${1:?Usage: bw-monitorctl domain set DOMAIN EMAIL}"; email="${2:?Usage: bw-monitorctl domain set DOMAIN EMAIL}"
         repo="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"; ref="${BW_GITHUB_REF:-main}"
         exec bash -c 'curl -fsSL "https://raw.githubusercontent.com/$1/$2/install.sh" | bash -s -- --update --domain "$3" --email "$4"' _ "$repo" "$ref" "$domain" "$email"
         ;;
@@ -98,14 +79,13 @@ Public URL: %s
         repo="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"; ref="${BW_GITHUB_REF:-main}"
         exec bash -c 'curl -fsSL "https://raw.githubusercontent.com/$1/$2/install.sh" | bash -s -- --update --ip-mode --public-ip "$3" --port "$4"' _ "$repo" "$ref" "$ip" "$port"
         ;;
-      *) echo 'Usage: virtinfra-monitorctl domain status|set DOMAIN EMAIL|remove [IP] [PORT]' >&2; exit 2 ;;
+      *) echo 'Usage: bw-monitorctl domain status|set DOMAIN EMAIL|remove [IP] [PORT]' >&2; exit 2 ;;
     esac
     ;;
   help|--help|-h)
     cat <<'EOF'
-virtinfra-monitorctl commands:
-  status                 services, watchdog and container
-  health                 /livez and PostgreSQL /healthz
+bw-monitorctl commands:
+  status                 services and container
   doctor                 fast health check
   audit                  deep read-only audit
   db-check               PostgreSQL/Timescale details
@@ -121,8 +101,6 @@ virtinfra-monitorctl commands:
   credentials            root-only generated credentials
   urls                    dashboard/admin/push URLs
   version                 deployed version
-  timezone status         current display timezone
-  timezone set VALUE      UTC or Asia/Ho_Chi_Minh
   update                  update from configured GitHub repo/ref
   domain status           show domain/TLS state
   domain set D E          switch to domain D with Let's Encrypt email E

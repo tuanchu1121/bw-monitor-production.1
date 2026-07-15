@@ -1,27 +1,27 @@
 # Quick commands
 
 ```bash
-virtinfra-monitorctl status
-virtinfra-monitorctl doctor
-virtinfra-monitorctl db-check
-virtinfra-monitorctl logs all 200
-virtinfra-monitorctl follow monitor
-virtinfra-monitorctl restart
-virtinfra-monitorctl backup
-virtinfra-monitorctl retention
-virtinfra-monitorctl vacuum
-virtinfra-monitorctl psql
-virtinfra-monitorctl urls
-virtinfra-monitorctl credentials
-virtinfra-monitorctl version
-virtinfra-monitorctl update
+bw-monitorctl status
+bw-monitorctl doctor
+bw-monitorctl db-check
+bw-monitorctl logs all 200
+bw-monitorctl follow monitor
+bw-monitorctl restart
+bw-monitorctl backup
+bw-monitorctl retention
+bw-monitorctl vacuum
+bw-monitorctl psql
+bw-monitorctl urls
+bw-monitorctl credentials
+bw-monitorctl version
+bw-monitorctl update
 ```
 
 Agent:
 
 ```bash
-systemctl status virtinfra-agent.service --no-pager -l
-journalctl -fu virtinfra-agent.service
+systemctl status bwagent --no-pager -l
+journalctl -fu bwagent
 ```
 
 Ansible Agent deployment:

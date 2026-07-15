@@ -1,7 +1,7 @@
-"""PostgreSQL compatibility and pooling layer for VirtInfra Monitor v50.
+"""PostgreSQL compatibility and pooling layer for BW Monitor v50.
 
 The application UI and business logic historically used Python's sqlite3 API.
-This module preserves the small DB-API surface used by VirtInfra Monitor while all
+This module preserves the small DB-API surface used by BW Monitor while all
 runtime data is stored in PostgreSQL/TimescaleDB.  It is intentionally isolated
 so routes and abuse/storage logic can be refactored incrementally without
 running two databases or duplicating data.
@@ -23,7 +23,7 @@ try:
     from psycopg_pool import ConnectionPool
 except Exception as exc:  # pragma: no cover - installer provides dependencies
     raise RuntimeError(
-        "VirtInfra Monitor v50 requires psycopg 3 and psycopg_pool. "
+        "BW Monitor v50 requires psycopg 3 and psycopg_pool. "
         "Install requirements.txt before importing the application."
     ) from exc
 
@@ -100,7 +100,7 @@ def _configure_connection(conn: psycopg.Connection) -> None:
     conn.autocommit = False
     with conn.cursor() as cur:
         cur.execute("SET TIME ZONE 'UTC'")
-        cur.execute("SET application_name = 'virtinfra-monitor-v50'")
+        cur.execute("SET application_name = 'bw-monitor-v50'")
         if _STATEMENT_TIMEOUT_MS:
             cur.execute("SELECT set_config('statement_timeout', %s, false)", (f"{_STATEMENT_TIMEOUT_MS}ms",))
         if _LOCK_TIMEOUT_MS:
@@ -124,7 +124,7 @@ def _get_pool() -> ConnectionPool:
                 open=True,
                 configure=_configure_connection,
                 kwargs={"connect_timeout": max(2, int(_POOL_TIMEOUT))},
-                name="virtinfra-monitor-v50",
+                name="bw-monitor-v50",
             )
         return _pool
 

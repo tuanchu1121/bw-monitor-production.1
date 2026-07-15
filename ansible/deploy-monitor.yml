@@ -1,5 +1,5 @@
 ---
-- name: Deploy VirtInfra Monitor v50 PostgreSQL Native
+- name: Deploy BW Monitor v50 PostgreSQL Native
   hosts: monitors
   become: "{{ (ansible_user | default('root')) != 'root' }}"
   gather_facts: false
@@ -74,7 +74,7 @@
     - name: Show deployment result
       ansible.builtin.debug:
         msg:
-          - "VirtInfra Monitor v50 deployed"
+          - "BW Monitor v50 deployed"
           - "Credentials: /root/bw-monitor-credentials.env"
           - "{{ bw_monitor_doctor.stdout_lines | default([]) }}"
 

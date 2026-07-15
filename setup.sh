@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-echo 'VirtInfra Monitor v50 setup wizard'
+echo 'BW Monitor v50 setup wizard'
 read -r -p 'Use domain? [y/N]: ' use_domain
 if [[ "$use_domain" =~ ^[Yy]$ ]]; then
   read -r -p 'Domain: ' domain

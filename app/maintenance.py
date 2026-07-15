@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Out-of-process FIFO PostgreSQL maintenance runner for VirtInfra Monitor v50.
+"""Out-of-process FIFO PostgreSQL maintenance runner for BW Monitor v50.
 
 Usage:
     python3 bw_monitor_maintenance.py JOB_ID
@@ -7,7 +7,7 @@ Usage:
 The Flask application creates the job row and starts:
     bw-monitor-maintenance@JOB_ID.service
 
-This runner loads the sibling VirtInfra Monitor application module so retention and
+This runner loads the sibling bw-monitor application module so retention and
 history deletion use exactly the same schema and logic as the web application.
 """
 
@@ -79,7 +79,7 @@ def find_app_file() -> Path:
             return path
 
     raise RuntimeError(
-        "Cannot locate the VirtInfra Monitor application Python file. "
+        "Cannot locate the bw-monitor application Python file. "
         "Set BW_MONITOR_APP_FILE=/opt/bw-monitor/<main-file>.py in the service template."
     )
 
@@ -642,7 +642,7 @@ def acquire_lock():
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="VirtInfra Monitor single-worker maintenance runner")
+    parser = argparse.ArgumentParser(description="bw-monitor single-worker maintenance runner")
     parser.add_argument("job_id", type=int, help="maintenance_jobs.id")
     args = parser.parse_args()
 

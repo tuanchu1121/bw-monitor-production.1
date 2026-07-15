@@ -3,25 +3,25 @@
 Fast health:
 
 ```bash
-virtinfra-monitorctl doctor
+bw-monitorctl doctor
 ```
 
 Deep read-only audit:
 
 ```bash
-virtinfra-monitorctl audit
+bw-monitorctl audit
 ```
 
 Database details:
 
 ```bash
-virtinfra-monitorctl db-check
+bw-monitorctl db-check
 ```
 
 Sanitized support bundle:
 
 ```bash
-virtinfra-monitorctl diagnostics
+bw-monitorctl diagnostics
 ```
 
 Release source audit:

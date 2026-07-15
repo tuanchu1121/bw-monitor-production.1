@@ -1,32 +1,12 @@
 # Changelog
 
-## 50.2.1-prod-r1-csrf-topvm-fix
-
-- Add the session CSRF token to the Display Timezone form.
-- Fix the PostgreSQL Top VM historical-period query by replacing the SQLite-only `HAVING total` alias with the full aggregate expression.
-- Extend live PostgreSQL regression coverage to Top VM 10m/30m/1h and the timezone POST workflow.
-
-## 50.2.0-prod-r1-virtinfra-hardening
-
-- Renamed the public product to VirtInfra Monitor and the node collector to VirtInfra Agent.
-- Added canonical VirtInfra Agent service, paths, doctor and compatibility migration from bwagent.
-- Added UTC and Asia/Ho_Chi_Minh display-timezone selection without rewriting stored timestamps.
-- Canonicalized custom snapshot URLs to absolute Unix timestamps across timezone switches.
-- Fixed hidden Node/VM leakage through Dashboard and Storage search paths.
-- Added PostgreSQL-backed cross-worker page-cache invalidation for Hide/Restore.
-- Corrected database sizing UI: PostgreSQL data is separate from reusable WAL reserve; removed SQLite SHM wording.
-- Made Current Abuse fit normal desktop widths.
-- Added /livez, /healthz, a local systemd watchdog, Nginx upstream hardening and Gunicorn /dev/shm heartbeats.
-- Serialized same-node ingestion and performance-summary bootstrap with PostgreSQL advisory locks.
-- Corrected age-based snapshot selection to use the full requested period.
-
 ## 50.0.4-prod-r1-one-command
 
 - Fixed Abuse Policy save/create on PostgreSQL. `abuse_policy_versions` is keyed by `revision` and is no longer incorrectly treated as an `id`-serial table.
 - Made legacy `BEGIN` and `BEGIN IMMEDIATE` compatibility statements transaction no-ops under psycopg, removing duplicate transaction warnings while preserving commit/rollback semantics.
 - Added static and live PostgreSQL regression coverage for creating an Abuse policy version.
 
-## 50.0.3-prod-r1-one-command
+## 50.0.4-prod-r1-one-command
 
 - Fix PostgreSQL `GroupingError` on the Node Health dashboard caused by grouping the computed physical-network role by the conflicting input column name.
 - Group the normalized physical-network role by output position (`GROUP BY np.node, 2`), which is valid on PostgreSQL and remains compatible with the legacy query shape.

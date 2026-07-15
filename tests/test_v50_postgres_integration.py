@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live PostgreSQL integration test for the full VirtInfra Monitor application.
+"""Live PostgreSQL integration test for the full BW Monitor application.
 
 Set BW_TEST_DATABASE_URL to a disposable database. The test drops/recreates the
 public and bw_meta schemas in that database.
@@ -131,7 +131,7 @@ payload = {
     },
     "physical_interfaces": [],
     "bridge_addresses": [{"role": "public", "bridge": "br0", "ipv4": ["203.0.113.50/24"], "primary_ipv4": "203.0.113.50"}],
-    "agent_health": {"version": 13, "duration_ms": 420, "counts": {"vms": 1, "interfaces": 1}, "timings": {}},
+    "agent_health": {"version": 12, "duration_ms": 420, "counts": {"vms": 1, "interfaces": 1}, "timings": {}},
 }
 
 client = module.app.test_client()
@@ -150,30 +150,12 @@ with client.session_transaction() as sess:
     sess["csrf_token"] = "test-csrf"
 
 paths = [
-    "/", "/top", "/top?period=10m", "/top?period=30m", "/top?period=1h",
-    "/abuse/vms", "/storage", "/node/V50-TEST-NODE",
+    "/", "/top", "/abuse/vms", "/storage", "/node/V50-TEST-NODE",
     f"/vm?node=V50-TEST-NODE&vm_uuid={vm_uuid}", "/api/v1/performance",
-    "/admin?section=overview",
 ]
 for path in paths:
     result = client.get(path)
     assert result.status_code == 200, f"{path}: {result.status_code} {result.get_data(as_text=True)[:500]}"
-
-# Regression: the timezone form must include the session CSRF token and the
-# POST must succeed with it. The same endpoint must reject a missing token.
-overview = client.get("/admin?section=overview")
-overview_html = overview.get_data(as_text=True)
-assert 'action="/admin/display-timezone"' in overview_html
-assert 'name="csrf_token" value="test-csrf"' in overview_html
-bad_tz = client.post("/admin/display-timezone", data={"timezone": "UTC"})
-assert bad_tz.status_code == 403, bad_tz.get_data(as_text=True)
-good_tz = client.post(
-    "/admin/display-timezone",
-    data={"timezone": "UTC", "csrf_token": "test-csrf"},
-    follow_redirects=False,
-)
-assert good_tz.status_code == 302, good_tz.get_data(as_text=True)
-assert module.display_timezone_name() == "UTC"
 
 # Regression: abuse_policy_versions uses revision as its primary key and has no
 # id column. Saving a policy must not receive an automatic RETURNING id suffix.

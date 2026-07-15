@@ -3,7 +3,7 @@
 ## Backup
 
 ```bash
-virtinfra-monitorctl backup
+bw-monitorctl backup
 ```
 
 The backup uses PostgreSQL custom format with compression and validates the archive list. It also copies protected environment files, credentials, Nginx site, deployed version, metadata and SHA256 checksums.
@@ -19,7 +19,7 @@ Default local retention is 14 days. Keep an additional encrypted copy outside th
 ## Restore database only
 
 ```bash
-virtinfra-monitorctl restore \
+bw-monitorctl restore \
 --from /var/backups/bw-monitor/20260715-050000 \
 --yes
 ```
@@ -38,7 +38,7 @@ The restore tool:
 ## Restore configuration too
 
 ```bash
-virtinfra-monitorctl restore \
+bw-monitorctl restore \
 --from /var/backups/bw-monitor/20260715-050000 \
 --with-config \
 --yes

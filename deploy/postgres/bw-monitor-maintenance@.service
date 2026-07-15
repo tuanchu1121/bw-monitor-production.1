@@ -1,5 +1,5 @@
 [Unit]
-Description=VirtInfra Monitor PostgreSQL maintenance job %i
+Description=BW Monitor PostgreSQL maintenance job %i
 After=network-online.target docker.service bw-monitor.service
 Wants=network-online.target docker.service
 ConditionPathExists=/opt/bw-monitor/maintenance.py

@@ -7,7 +7,7 @@ Never commit or publish:
 - `/root/bw-monitor-credentials.env`
 - `/etc/default/bw-monitor`
 - `/etc/default/bw-monitor-postgres`
-- `/etc/virtinfra-agent.env` (and legacy `/etc/bwagent.env` during migration)
+- `/etc/bwagent.env`
 - PostgreSQL dumps or backup directories
 - production Ansible inventories
 - Ansible Vault password files

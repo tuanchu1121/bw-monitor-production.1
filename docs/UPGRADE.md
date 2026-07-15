@@ -5,9 +5,9 @@ v50 is intended as a fresh PostgreSQL-native installation. This release does not
 ## Normal v50 update
 
 ```bash
-virtinfra-monitorctl backup
-virtinfra-monitorctl update
-virtinfra-monitorctl doctor
+bw-monitorctl backup
+bw-monitorctl update
+bw-monitorctl doctor
 ```
 
 Or:
@@ -29,4 +29,4 @@ BW_GITHUB_REPO=tuanchu1121/bw-monitor-production.1
 BW_GITHUB_REF=main
 ```
 
-Then run `virtinfra-monitorctl update`.
+Then run `bw-monitorctl update`.

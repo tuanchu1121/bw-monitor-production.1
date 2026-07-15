@@ -1,4 +1,4 @@
-name: VirtInfra Monitor v50 CI
+name: BW Monitor v50 CI
 
 on:
   push:
