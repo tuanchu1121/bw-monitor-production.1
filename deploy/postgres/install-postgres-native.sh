@@ -188,7 +188,10 @@ if ((REDIS_CACHE)); then
 fi
 if ((SKIP_PREFLIGHT==0)); then
   log "Run v50 source and deployment preflight"
-  BW_PREFLIGHT_PYTHON="$APP_DIR/venv/bin/python3" "$REPO_ROOT/preflight.sh" --use-current-python --skip-live
+  BW_PREFLIGHT_PYTHON="$APP_DIR/venv/bin/python3" \
+  bash "$REPO_ROOT/preflight.sh" \
+  --use-current-python \
+  --skip-live
 fi
 
 if [[ -n "$ADMIN_PASSWORD" ]]; then
