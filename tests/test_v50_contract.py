@@ -9,7 +9,7 @@ def need(cond: bool, message: str) -> None:
         raise AssertionError(message)
 
 version = (ROOT / "VERSION").read_text().strip()
-need(version == "50.0.2-prod-r1-one-command", f"unexpected VERSION: {version}")
+need(version == "50.0.3-prod-r1-one-command", f"unexpected VERSION: {version}")
 
 app = (ROOT / "app/app.py").read_text()
 pg = (ROOT / "app/bw_pg.py").read_text()
@@ -62,6 +62,12 @@ markers = [
 for marker in markers:
     need(marker in app, f"full application marker missing: {marker}")
 need(len(app.splitlines()) > 25000, "full legacy UI/business logic was not preserved")
+
+# PostgreSQL resolves GROUP BY role to the input np.role column in this query,
+# leaving np.bridge ungrouped. Group by the normalized SELECT expression via
+# output position instead.
+need("GROUP BY np.node, role" not in app, "PostgreSQL-incompatible physical NIC role grouping remains")
+need("GROUP BY np.node, 2" in app, "PostgreSQL physical NIC role grouping fix missing")
 need("ProtectHome=read-only" in (ROOT / "deploy/agent/install-agent.sh").read_text(), "Agent service must see /home")
 need("become: \"{{ (ansible_user | default('root')) != 'root' }}\"" in playbook, "root Ansible nodes should not require sudo")
 

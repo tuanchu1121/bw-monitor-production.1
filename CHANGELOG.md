@@ -1,7 +1,10 @@
 # Changelog
 
-## 50.0.2-prod-r1-one-command
+## 50.0.3-prod-r1-one-command
 
+- Fix PostgreSQL `GroupingError` on the Node Health dashboard caused by grouping the computed physical-network role by the conflicting input column name.
+- Group the normalized physical-network role by output position (`GROUP BY np.node, 2`), which is valid on PostgreSQL and remains compatible with the legacy query shape.
+- Add a regression contract so the incompatible `GROUP BY np.node, role` form cannot return.
 - Stage installs from the canonical `SHA256SUMS` manifest, so stale v48/v49 files left by Windows Explorer or GitHub Desktop are ignored.
 - Verify every canonical source file before installing.
 - Keep the release preflight strict while making the one-command bootstrap resilient to dirty merged repositories.

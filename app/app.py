@@ -2882,7 +2882,7 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
             MAX(COALESCE(np.interval_seconds, {CACHE_BUCKET_SECONDS})) AS interval_seconds
         FROM node_physical_net_stats np
         JOIN selected x ON x.node=np.node AND x.selected_bucket=np.bucket
-        GROUP BY np.node, role
+        GROUP BY np.node, 2
     ),
     phys AS (
         SELECT
@@ -28184,7 +28184,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.0.2-prod-r1-one-command",
+            "version":"50.0.3-prod-r1-one-command",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
