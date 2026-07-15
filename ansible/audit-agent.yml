@@ -1,5 +1,5 @@
 ---
-- name: Audit BW Monitor Agent
+- name: Audit VirtInfra Monitor Agent
   hosts: all
   become: "{{ (ansible_user | default('root')) != 'root' }}"
   gather_facts: false
@@ -7,7 +7,7 @@
 
   tasks:
     - name: Run Agent doctor
-      ansible.builtin.command: /usr/local/sbin/bwagent-doctor
+      ansible.builtin.command: /usr/local/sbin/virtinfra-agent-doctor
       register: doctor
       changed_when: false
 

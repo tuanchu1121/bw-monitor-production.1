@@ -1,6 +1,6 @@
-# Hướng dẫn đầy đủ BW Monitor v50
+# Hướng dẫn đầy đủ VirtInfra Monitor v50
 
-BW Monitor v50 giữ nguyên toàn bộ giao diện và chức năng của code production cũ, nhưng runtime chỉ dùng **một PostgreSQL 17 + TimescaleDB database**. Không có database thứ hai để đồng bộ, không có dữ liệu chính trong Redis, không cần migrate dữ liệu cũ khi cài server mới.
+VirtInfra Monitor v50 giữ nguyên toàn bộ giao diện và chức năng của code production cũ, nhưng runtime chỉ dùng **một PostgreSQL 17 + TimescaleDB database**. Không có database thứ hai để đồng bộ, không có dữ liệu chính trong Redis, không cần migrate dữ liệu cũ khi cài server mới.
 
 ## 1. Luồng thật của Agent
 
@@ -76,15 +76,15 @@ http://45.92.158.124:8080
 Kiểm tra:
 
 ```bash
-bw-monitorctl status
-bw-monitorctl doctor
-bw-monitorctl urls
+virtinfra-monitorctl status
+virtinfra-monitorctl doctor
+virtinfra-monitorctl urls
 ```
 
 Xem tài khoản và Agent token:
 
 ```bash
-bw-monitorctl credentials
+virtinfra-monitorctl credentials
 ```
 
 ## 5. Cài bằng domain + HTTPS
@@ -131,7 +131,7 @@ Repo trên máy Ansible:
 cd /.data/agent
 git pull --ff-only
 
-read -rsp 'Nhập BW Agent token: ' BW_TOKEN
+read -rsp 'Nhập VirtInfra Agent token: ' BW_TOKEN
 echo
 
 bash ansible/deploy-agent.sh \
@@ -151,8 +151,8 @@ ansible all \
 -i ansible/test.txt \
 -m shell \
 -a '
-systemctl is-active bwagent.service
-systemctl show bwagent.service -p ProtectHome --value
+systemctl is-active virtinfra-agent.service
+systemctl show virtinfra-agent.service -p ProtectHome --value
 ' \
 --forks 20
 ```
@@ -167,26 +167,26 @@ read-only
 ## 7. Quản trị
 
 ```bash
-bw-monitorctl help
-bw-monitorctl status
-bw-monitorctl doctor
-bw-monitorctl audit
-bw-monitorctl db-check
-bw-monitorctl logs all 200
-bw-monitorctl follow monitor
-bw-monitorctl restart
-bw-monitorctl retention
-bw-monitorctl vacuum
-bw-monitorctl psql
-bw-monitorctl backup
-bw-monitorctl diagnostics
-bw-monitorctl update
+virtinfra-monitorctl help
+virtinfra-monitorctl status
+virtinfra-monitorctl doctor
+virtinfra-monitorctl audit
+virtinfra-monitorctl db-check
+virtinfra-monitorctl logs all 200
+virtinfra-monitorctl follow monitor
+virtinfra-monitorctl restart
+virtinfra-monitorctl retention
+virtinfra-monitorctl vacuum
+virtinfra-monitorctl psql
+virtinfra-monitorctl backup
+virtinfra-monitorctl diagnostics
+virtinfra-monitorctl update
 ```
 
 ## 8. Backup
 
 ```bash
-bw-monitorctl backup
+virtinfra-monitorctl backup
 ```
 
 Mỗi backup có:
@@ -207,7 +207,7 @@ Redis không cần backup vì không phải nguồn dữ liệu.
 ## 9. Restore
 
 ```bash
-bw-monitorctl restore \
+virtinfra-monitorctl restore \
 --from /var/backups/bw-monitor/20260715-050000 \
 --yes
 ```
@@ -217,7 +217,7 @@ Giữ config server mới, chỉ restore DB.
 Restore cả config:
 
 ```bash
-bw-monitorctl restore \
+virtinfra-monitorctl restore \
 --from /var/backups/bw-monitor/20260715-050000 \
 --with-config \
 --yes
@@ -226,7 +226,7 @@ bw-monitorctl restore \
 ## 10. Update
 
 ```bash
-bw-monitorctl update
+virtinfra-monitorctl update
 ```
 
 Hoặc:
@@ -240,7 +240,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/updat
 ## 11. Đổi IP sang domain
 
 ```bash
-bw-monitorctl domain set \
+virtinfra-monitorctl domain set \
 monitor.example.com \
 ops@example.com
 ```
@@ -248,7 +248,7 @@ ops@example.com
 ## 12. Đổi domain về IP
 
 ```bash
-bw-monitorctl domain remove \
+virtinfra-monitorctl domain remove \
 45.92.158.124 \
 8080
 ```
@@ -263,7 +263,7 @@ Credentials:         /root/bw-monitor-credentials.env
 Database volume:     bw_monitor_postgres_data
 Backup:              /var/backups/bw-monitor
 Nginx site:          /etc/nginx/sites-available/bw-monitor.conf
-Systemd web:         bw-monitor.service
+Systemd web alias:   virtinfra-monitor.service (compatibility unit: bw-monitor.service)
 Retention timer:     bw-monitor-retention.timer
 Backup timer:        bw-monitor-backup.timer
 ```
@@ -271,15 +271,15 @@ Backup timer:        bw-monitor-backup.timer
 ## 14. Khi có lỗi
 
 ```bash
-bw-monitorctl doctor
-bw-monitorctl logs all 300
-bw-monitorctl db-check
+virtinfra-monitorctl doctor
+virtinfra-monitorctl logs all 300
+virtinfra-monitorctl db-check
 
 docker ps --filter name=bw-timescaledb
 docker logs --tail 300 bw-timescaledb
 
-systemctl status bw-monitor --no-pager -l
-journalctl -u bw-monitor -n 300 --no-pager
+systemctl status virtinfra-monitor.service --no-pager -l
+journalctl -u virtinfra-monitor.service -n 300 --no-pager
 ```
 
 Không xóa Docker volume khi chưa backup. Không đưa `/root/bw-monitor-credentials.env`, file env, inventory thật hoặc private key lên Git.

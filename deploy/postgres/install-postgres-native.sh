@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="50.0.4-prod-r1-one-command"
+RELEASE="50.2.2-prod-r1-original-time-restore"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 APP_SRC="$REPO_ROOT/app"
@@ -30,7 +30,7 @@ log(){ printf '\n==> %s\n' "$*"; }
 warn(){ printf '\nWARNING: %s\n' "$*" >&2; }
 die(){ printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 usage(){ cat <<'EOF'
-BW Monitor v50 PostgreSQL Native installer
+VirtInfra Monitor v50 PostgreSQL Native installer
 
 Fresh server by public IP:
   ./install.sh --public-ip 203.0.113.10 --port 8080
@@ -370,15 +370,20 @@ install -m 0644 "$SCRIPT_DIR/bw-monitor.service" "$SERVICE_FILE"
 install -m 0644 "$SCRIPT_DIR/bw-monitor-maintenance@.service" /etc/systemd/system/bw-monitor-maintenance@.service
 install -m 0644 "$SCRIPT_DIR/bw-monitor-retention.service" /etc/systemd/system/bw-monitor-retention.service
 install -m 0644 "$SCRIPT_DIR/bw-monitor-retention.timer" /etc/systemd/system/bw-monitor-retention.timer
+install -m 0755 "$SCRIPT_DIR/virtinfra-monitor-health-watch.sh" "$APP_DIR/virtinfra-monitor-health-watch.sh"
+install -m 0644 "$SCRIPT_DIR/virtinfra-monitor-health-watch.service" /etc/systemd/system/virtinfra-monitor-health-watch.service
+install -m 0644 "$SCRIPT_DIR/virtinfra-monitor-health-watch.timer" /etc/systemd/system/virtinfra-monitor-health-watch.timer
 for helper in backup restore doctor db-check audit collect-diagnostics bw-monitorctl; do
   install -m 0755 "$SCRIPT_DIR/$helper.sh" "$APP_DIR/$helper.sh"
 done
 ln -sfn "$APP_DIR/bw-monitorctl.sh" /usr/local/sbin/bw-monitorctl
+ln -sfn "$APP_DIR/bw-monitorctl.sh" /usr/local/sbin/virtinfra-monitorctl
 ln -sfn "$APP_DIR/doctor.sh" /usr/local/sbin/bw-monitor-doctor
+ln -sfn "$APP_DIR/doctor.sh" /usr/local/sbin/virtinfra-monitor-doctor
 
 cat > /etc/systemd/system/bw-monitor-backup.service <<'UNIT'
 [Unit]
-Description=BW Monitor PostgreSQL/TimescaleDB backup
+Description=VirtInfra Monitor PostgreSQL/TimescaleDB backup
 After=docker.service
 [Service]
 Type=oneshot
@@ -391,7 +396,7 @@ IOSchedulingPriority=7
 UNIT
 cat > /etc/systemd/system/bw-monitor-backup.timer <<'UNIT'
 [Unit]
-Description=Daily BW Monitor PostgreSQL backup
+Description=Daily VirtInfra Monitor PostgreSQL backup
 [Timer]
 OnCalendar=*-*-* 02:20:00
 RandomizedDelaySec=15m
@@ -401,8 +406,8 @@ WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer
-systemctl restart bw-monitor-retention.timer bw-monitor-backup.timer
+systemctl enable bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer virtinfra-monitor-health-watch.timer
+systemctl restart bw-monitor-retention.timer bw-monitor-backup.timer virtinfra-monitor-health-watch.timer
 
 if [[ -n "$DOMAIN" && $NO_NGINX -eq 0 ]]; then
   log "Configure Nginx for $DOMAIN"
@@ -439,7 +444,7 @@ if ((FIREWALL)); then
   ufw --force enable
 fi
 
-log "Start and verify BW Monitor"
+log "Start and verify VirtInfra Monitor"
 systemctl restart bw-monitor.service
 for i in $(seq 1 60); do
   code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 "http://127.0.0.1:$PORT/login" 2>/dev/null || true)
@@ -458,7 +463,7 @@ if ((RUN_RETENTION)); then systemctl start bw-monitor-retention.service; fi
 cat <<EOF
 
 ============================================================
-BW Monitor $RELEASE installed
+VirtInfra Monitor $RELEASE installed
 ============================================================
 Dashboard:      $PUBLIC_URL/
 Admin:          $PUBLIC_URL/admin
@@ -469,9 +474,10 @@ Database:       PostgreSQL 17 + TimescaleDB (single source of truth)
 PostgreSQL:     127.0.0.1:$PG_PORT (loopback only)
 Agent cadence:  local 15-second samples, one push every 300 seconds
 Retention:      0-48h real 5-minute pushes; 48h-7d one real/hour; >7d delete
-Management:     bw-monitorctl help
-Doctor:         bw-monitorctl doctor
-Logs:           bw-monitorctl logs all 200
+Management:     virtinfra-monitorctl help
+Compatibility:  bw-monitorctl remains available
+Doctor:         virtinfra-monitorctl doctor
+Logs:           virtinfra-monitorctl logs all 200
 ============================================================
 EOF
 if ((GENERATED_PASSWORD)); then echo "Generated Admin password: $ADMIN_PASSWORD"; fi

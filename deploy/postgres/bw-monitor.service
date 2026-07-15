@@ -1,5 +1,6 @@
 [Unit]
-Description=BW Monitor v50 PostgreSQL Native web and ingestion service
+StartLimitIntervalSec=0
+Description=VirtInfra Monitor PostgreSQL/TimescaleDB web and ingestion service
 Wants=network-online.target docker.service
 After=network-online.target docker.service
 Requires=docker.service
@@ -20,7 +21,7 @@ ExecStartPre=/opt/bw-monitor/venv/bin/python3 -m py_compile /opt/bw-monitor/app.
 ExecStartPre=/opt/bw-monitor/venv/bin/python3 -c "import bw_pg; print(bw_pg.healthcheck())"
 ExecStart=/opt/bw-monitor/start-monitor.sh
 Restart=always
-RestartSec=3
+RestartSec=2
 TimeoutStartSec=180
 TimeoutStopSec=60
 KillSignal=SIGTERM
@@ -40,3 +41,4 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+Alias=virtinfra-monitor.service

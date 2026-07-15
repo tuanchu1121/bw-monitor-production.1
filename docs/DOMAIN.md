@@ -23,7 +23,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/insta
 ## Switch an existing IP install to domain
 
 ```bash
-bw-monitorctl domain set monitor.example.com ops@example.com
+virtinfra-monitorctl domain set monitor.example.com ops@example.com
 ```
 
 The PostgreSQL volume, users, Agent token, settings and data are preserved.
@@ -31,7 +31,7 @@ The PostgreSQL volume, users, Agent token, settings and data are preserved.
 ## Switch back to IP
 
 ```bash
-bw-monitorctl domain remove 203.0.113.10 8080
+virtinfra-monitorctl domain remove 203.0.113.10 8080
 ```
 
 ## Certificate checks

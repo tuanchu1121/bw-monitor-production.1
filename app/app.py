@@ -87,6 +87,7 @@ app.config.update(
 
 TZ_NAME = "Asia/Ho_Chi_Minh"
 TZ = ZoneInfo(TZ_NAME)
+PRODUCT_NAME = "VirtInfra Monitor"
 
 PUBLIC_BRIDGE = "br0"
 PRIVATE_BRIDGE = "br1"
@@ -2658,7 +2659,7 @@ def range_card(period, start, end, q="", endpoint="index", node=None, vm_status=
     if endpoint == "node_page":
         time_cells = f"""
             <div><div class="label">Latest Available</div><div class="value">{fmt_full(end)}</div></div>
-            <div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div>
+            <div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div>
             <div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div>
         """
         period_title = "Snapshot lookback"
@@ -2666,7 +2667,7 @@ def range_card(period, start, end, q="", endpoint="index", node=None, vm_status=
     else:
         time_cells = f"""
             <div><div class="label">Live Updated</div><div class="value">{fmt_full(end)}</div></div>
-            <div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div>
+            <div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div>
             <div><div class="label">Requested Point</div><div class="value">{fmt_full(start)}</div></div>
         """
         period_title = "Snapshot lookback"
@@ -2699,7 +2700,7 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
     sort_by = clean_node_sort(sort_by)
     order = clean_sort_order(order)
     now = now_ts()
-    requested = int(target_ts) if target_ts is not None else now - max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)
+    requested = int(target_ts) if target_ts is not None else now - max(0, period_seconds(period))
     requested = max(now - HOURLY_RETENTION_DAYS * 86400, min(now, requested))
     offset = max(0, now - requested)
     visible_after = now - NODE_AUTO_DELETE_SECONDS
@@ -2785,6 +2786,8 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_inventory svi
                     WHERE svi.node=l.node
+                      AND COALESCE(svi.status, 'active')!='hidden'
+                      AND svi.deleted_at IS NULL
                       AND (
                             svi.vm_uuid LIKE ?
                             OR COALESCE(svi.last_iface, '') LIKE ?
@@ -2795,6 +2798,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_location_latest svl
                     WHERE svl.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory svi2
+                            WHERE svi2.node=svl.node AND svi2.vm_uuid=svl.vm_uuid
+                              AND COALESCE(svi2.status, 'active')!='hidden'
+                              AND svi2.deleted_at IS NULL
+                          )
                       AND (
                             svl.vm_uuid LIKE ?
                             OR COALESCE(svl.last_iface, '') LIKE ?
@@ -2805,6 +2814,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_node_presence svp
                     WHERE svp.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory svi3
+                            WHERE svi3.node=svp.node AND svi3.vm_uuid=svp.vm_uuid
+                              AND COALESCE(svi3.status, 'active')!='hidden'
+                              AND svi3.deleted_at IS NULL
+                          )
                       AND (
                             svp.vm_uuid LIKE ?
                             OR COALESCE(svp.last_iface, '') LIKE ?
@@ -2815,6 +2830,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_latest_metrics svm
                     WHERE svm.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory svi4
+                            WHERE svi4.node=svm.node AND svi4.vm_uuid=svm.vm_uuid
+                              AND COALESCE(svi4.status, 'active')!='hidden'
+                              AND svi4.deleted_at IS NULL
+                          )
                       AND (
                             svm.vm_uuid LIKE ?
                             OR COALESCE(svm.iface, '') LIKE ?
@@ -2868,6 +2889,7 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
         JOIN selected x ON x.node=ns.node AND x.selected_bucket=ns.bucket
         LEFT JOIN vm_inventory vi ON vi.node=ns.node AND vi.vm_uuid=ns.vm_uuid
         WHERE COALESCE(vi.status, 'active')!='hidden'
+          AND vi.deleted_at IS NULL
         GROUP BY ns.node
     ),
     phys_role AS (
@@ -4841,7 +4863,7 @@ def database_maintenance_card(message="", error=""):
         rows = '<tr><td colspan="8" class="empty">No maintenance jobs yet</td></tr>'
     return f"""
     <div class="card">
-        <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>PostgreSQL <b>{human(s['total_size'])}</b></span><span>Database <b>{human(s['db_size'])}</b></span><span>WAL <b>{human(s['wal_size'])}</b></span><span>Dead rows <b>{s['freelist_count']:,}</b></span></div></div>
+        <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>PostgreSQL data <b>{human(s['db_size'])}</b></span><span>WAL reserved/recycled <b>{human(s['wal_size'])}</b></span><span>Dead rows <b>{s['freelist_count']:,}</b></span></div></div>
         {notice}
         <div class="admin-note">Jobs run outside Gunicorn through <b>bw-monitor-maintenance@.service</b>. Purge actions are queued in batches of at most <b>3 nodes or VMs</b> and executed one batch at a time, so the Admin request returns immediately instead of holding a web worker.</div>
         <div class="bulk-bar">
@@ -4975,7 +4997,7 @@ def monitor_system_health_card():
             <div class="stat">CPU Load 1/5/15<b>{h['load1']:.2f} / {h['load5']:.2f} / {h['load15']:.2f}</b><small>{h['cpu_count']} CPU cores, load1 ~= {h['load_pct']}%</small></div>
             <div class="stat">Memory<b>{human(h['mem_used'])} / {human(h['mem_total'])}</b><small>Available {human(h['mem_available'])}, used {h['mem_pct']}%</small></div>
             <div class="stat">Disk<b>{human(h['disk_used'])} / {human(h['disk_total'])}</b><small>{escape(h['disk_path'])}, free {human(h['disk_free'])}, used {h['disk_pct']}%</small></div>
-            <div class="stat">Database<b>{human(h['db_size'] + h['wal_size'] + h['shm_size'])}</b><small>DB {human(h['db_size'])}, WAL {human(h['wal_size'])}, SHM {human(h['shm_size'])}</small></div>
+            <div class="stat">PostgreSQL data<b>{human(h['db_size'])}</b><small>WAL reserved/recycled {human(h['wal_size'])}; PostgreSQL manages and reuses it automatically</small></div>
             <div class="stat">Inventory<b>{h['node_count']} nodes / {h['vm_count']} VMs</b><small>Visible inventory rows only</small></div>
             <div class="stat">Logs<b>{h['account_log_count']} account / {h['node_log_count']} node</b><small>Retention still applies automatically</small></div>
             <div class="stat">Uptime<b>{human_age(h['uptime'])}</b><small>Python {escape(h['python'])}</small></div>
@@ -5524,7 +5546,9 @@ def get_top_vm_rows(period, q="", sort_by="total", order="desc", scope="all", li
           COALESCE((SELECT bai.primary_ipv4 FROM node_bridge_addresses_latest bai WHERE bai.node=ns.node AND LOWER(bai.role)='private' ORDER BY bai.last_seen DESC LIMIT 1),'') private_ipv4
         FROM node_stats ns LEFT JOIN node_inventory ni ON ni.node=ns.node LEFT JOIN vm_inventory vi ON vi.node=ns.node AND vi.vm_uuid=ns.vm_uuid LEFT JOIN perf p ON p.node=ns.node AND p.vm_uuid=ns.vm_uuid
         WHERE ns.bucket=? AND (ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL)) AND COALESCE(vi.status,'active')!='hidden' {extra_sql}
-        GROUP BY ns.node,ns.vm_uuid HAVING total>0 ORDER BY {order_sql} {order.upper()},total DESC,ns.node COLLATE NOCASE ASC,ns.vm_uuid COLLATE NOCASE ASC LIMIT ?
+        GROUP BY ns.node,ns.vm_uuid
+        HAVING SUM(COALESCE(ns.rx_delta,0)+COALESCE(ns.tx_delta,0))>0
+        ORDER BY {order_sql} {order.upper()},total DESC,ns.node COLLATE NOCASE ASC,ns.vm_uuid COLLATE NOCASE ASC LIMIT ?
         """,params).fetchall()
         return rows,selected_bucket,latest_bucket,limit
     finally:conn.close()
@@ -6451,7 +6475,7 @@ def page(title, content):
     </head>
     <body>
         <header>
-            <h2><a class="brand" href="{url_for('index')}">Bandwidth Monitor</a></h2>
+            <h2><a class="brand" href="{url_for('index')}">VirtInfra Monitor</a></h2>
             <div class="header-row">
                 <nav class="main-nav">
                     <a href="{url_for('index')}">Dashboard</a>
@@ -7098,7 +7122,7 @@ def index():
     {range_card(period, start, end, q=q, endpoint="index")}
     {node_table(rows, sort_by=sort_by, order=sort_order)}
     """
-    return page("Bandwidth Monitor", content)
+    return page("VirtInfra Monitor", content)
 
 
 
@@ -7120,7 +7144,7 @@ def node_health_page():
             </div>
             <div>
                 <div class="label">Timezone</div>
-                <div class="value">{TZ_NAME}</div>
+                <div class="value">{display_timezone_name()}</div>
             </div>
             <div>
                 <div class="label">Health Rule</div>
@@ -7252,7 +7276,7 @@ def top_node_page():
             </div>
             <div>
                 <div class="label">Timezone</div>
-                <div class="value">{TZ_NAME}</div>
+                <div class="value">{display_timezone_name()}</div>
             </div>
             <div>
                 <div class="label">Selected Snapshot</div>
@@ -7562,7 +7586,7 @@ def vm_abuse_page():
         ram_count = sum(1 for r in rows if r.get("ram_pct",0) >= ABUSE_RAM_RSS_PERCENT)
         content = f"""
         <div class="card top-card abuse-summary-card">
-            <div class="overview-head"><h3>Current VM Abuse</h3><div class="overview-meta"><span>Source <b>latest real snapshot per node</b></span><span>Timezone <b>{TZ_NAME}</b></span></div></div>
+            <div class="overview-head"><h3>Current VM Abuse</h3><div class="overview-meta"><span>Source <b>latest real snapshot per node</b></span><span>Timezone <b>{display_timezone_name()}</b></span></div></div>
             <div class="traffic-grid abuse-grid">
                 <div class="traffic-box traffic-box-main"><div class="traffic-title">Matched</div><div class="traffic-total">{total_matches}</div></div>
                 <div class="traffic-box"><div class="traffic-title">Network</div><div class="traffic-total">{network_count}</div></div>
@@ -7608,7 +7632,7 @@ def top_page():
             </div>
             <div>
                 <div class="label">Timezone</div>
-                <div class="value">{TZ_NAME}</div>
+                <div class="value">{display_timezone_name()}</div>
             </div>
             <div>
                 <div class="label">Selected Snapshot</div>
@@ -8274,7 +8298,7 @@ def vm_page():
     content=f"""
     {migration_notice}
     <div class="card"><h3>VM Metrics</h3><a href="{escape(back_href,quote=True)}">← Back to node</a><div class="grid" style="margin-top:14px"><div class="stat">Node<b class="mono">{escape(node)}</b></div><div class="stat">VM UUID<b class="mono">{escape(vm_uuid)}</b></div><div class="stat">Scope<b>{escape(scope)}</b></div><div class="stat">Last Push<b>{fmt_push(last_push)}</b></div></div></div>
-    <div class="card top-card"><div class="top-grid"><div><div class="label">Updated</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div><div><div class="label">Current Range</div><div class="value">{fmt_range(start)} <span class="arrow">→</span> {fmt_range(end)}</div></div></div><div class="label period-label">Period</div><div class="periods">{vm_period_links(period,node,vm_uuid,bridge,iface)}</div></div>
+    <div class="card top-card"><div class="top-grid"><div><div class="label">Updated</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div><div><div class="label">Current Range</div><div class="value">{fmt_range(start)} <span class="arrow">→</span> {fmt_range(end)}</div></div></div><div class="label period-label">Period</div><div class="periods">{vm_period_links(period,node,vm_uuid,bridge,iface)}</div></div>
     <div class="card"><h3>Overview</h3><div class="grid">
       <div class="stat">RX / TX<b>{human(rx_total)} / {human(tx_total)}</b></div><div class="stat">TOTAL<b>{human(total)}</b></div><div class="stat">Points<b>{non_zero_points}</b><small>Perf {perf_points}</small></div><div class="stat">Bucket Step<b>{int(step/60)}m</b></div>
       <div class="stat">AVG RX/TX Mbps<b>{lm_rx_mbps:.2f} / {lm_tx_mbps:.2f}</b></div><div class="stat">PEAK RX/TX Mbps<b>{lm_rx_mbps_peak:.2f} / {lm_tx_mbps_peak:.2f}</b><small>Local sampler peak</small></div>
@@ -8313,7 +8337,7 @@ def api_vm():
         "bridge": bridge,
         "iface": iface,
         "scope": vm_scope_text(bridge, iface),
-        "timezone": TZ_NAME,
+        "timezone": display_timezone_name(),
         "period": period,
         "bucket_step_seconds": step,
         "range_start": start,
@@ -9879,7 +9903,7 @@ def admin_api_system_health():
 def health():
     return {
         "status": "ok",
-        "timezone": TZ_NAME,
+        "timezone": display_timezone_name(),
         "cache": "node_stats",
     }
 
@@ -10420,6 +10444,14 @@ def push():
 
     conn = db()
     try:
+        # Keep different nodes parallel, but never let two payloads for the same
+        # node acquire PostgreSQL row locks in opposite order. This protects the
+        # web workers from deadlocks without changing Agent sampling or push cadence.
+        conn.execute("SET LOCAL lock_timeout = '60s'")
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+            (f"virtinfra-push:{node}",),
+        )
         receipt = conn.execute("""
             INSERT OR IGNORE INTO push_receipts(node, push_time, bucket, received_at)
             VALUES (?, ?, ?, ?)
@@ -11836,7 +11868,7 @@ def summary():
          public_ipv4,private_ipv4)=r
         state,_age,_missed=node_status_state(live_seen)
         data.append({"node":node,"status":state,"live_last_seen":live_seen,"live_last_seen_vn":fmt_full(live_seen),"snapshot":snapshot,"snapshot_vn":fmt_full(snapshot),"resolution":tier,"vm_count":vm_count or 0,"interface_count":iface_count or 0,"load1":load1 or 0,"load5":load5 or 0,"load15":load15 or 0,"uptime_seconds":uptime or 0,"cpu_percent":cpu_percent or 0,"ram_percent":ram_percent or 0,"public_bytes":public_total or 0,"private_bytes":private_total or 0,"total_bytes":node_total or 0,"drops":drops or 0,"errors":errors or 0,"source":source,"public_ipv4":public_ipv4 or "","private_ipv4":private_ipv4 or ""})
-    return jsonify({"updated":fmt_full(end),"timezone":TZ_NAME,"period":period,"requested_snapshot":start,"requested_snapshot_vn":fmt_full(start),"nodes":data})
+    return jsonify({"updated":fmt_full(end),"timezone":display_timezone_name(),"period":period,"requested_snapshot":start,"requested_snapshot_vn":fmt_full(start),"nodes":data})
 
 
 
@@ -12130,7 +12162,7 @@ def index_v480():
     {dashboard_custom_time_card(target_ts, q=q, sort_by=sort_by, sort_order=sort_order)}
     {node_table(rows, sort_by=sort_by, order=sort_order)}
     """
-    return page("Bandwidth Monitor", content)
+    return page("VirtInfra Monitor", content)
 
 
 app.view_functions["index"] = index_v480
@@ -13077,8 +13109,8 @@ def database_maintenance_card(message="", error=""):
       <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>Batch limit <b>{MAX_PURGE_ITEMS_PER_JOB}</b></span><span>Execution <b>single worker</b></span><span>Active <b>{active_count}</b></span></div></div>
       {notice}
       <div class="admin-note">Exactly <b>one maintenance job</b> may be active. Bulk purge selections stay inside one worker and are processed in internal batches of at most <b>{MAX_PURGE_ITEMS_PER_JOB}</b> items, preventing a systemd-unit stampede.</div>
-      <div class="queue-summary"><div><small>Waiting</small><b>{status_counts.get('queued',0)}</b></div><div><small>Running</small><b>{status_counts.get('running',0)}</b></div><div><small>Completed</small><b>{status_counts.get('ok',0)}</b></div><div><small>Failed</small><b>{status_counts.get('error',0)}</b></div><div><small>DB + WAL</small><b>{human(s['db_size']+s['wal_size'])}</b></div></div>
-      <div class="bulk-bar"><a class="btn" href="{escape(refresh_href,quote=True)}">Refresh queue</a><label><input type="checkbox" id="queue-auto-refresh"> Auto refresh every 10s</label><span class="table-hint">Main DB {human(s['db_size'])} · WAL {human(s['wal_size'])} · Reusable {human(s['reusable_bytes'])}</span></div>
+      <div class="queue-summary"><div><small>Waiting</small><b>{status_counts.get('queued',0)}</b></div><div><small>Running</small><b>{status_counts.get('running',0)}</b></div><div><small>Completed</small><b>{status_counts.get('ok',0)}</b></div><div><small>Failed</small><b>{status_counts.get('error',0)}</b></div><div><small>PostgreSQL data</small><b>{human(s['db_size'])}</b></div></div>
+      <div class="bulk-bar"><a class="btn" href="{escape(refresh_href,quote=True)}">Refresh queue</a><label><input type="checkbox" id="queue-auto-refresh"> Auto refresh every 10s</label><span class="table-hint">PostgreSQL data {human(s['db_size'])} · WAL reserved/recycled {human(s['wal_size'])} · reusable space {human(s['reusable_bytes'])}</span></div>
       <div class="bulk-bar">
         <form class="inline-form" method="post" action="{url_for('admin_database_maintenance')}" onsubmit="return confirm('Run bounded retention now? Latest 48 hours stay at 5-minute resolution; days 3-7 keep one real snapshot per hour; older history is deleted.')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><input type="hidden" name="action" value="retention"><button class="btn" type="submit">Run 2d raw / 7d retention</button></form>
         <form class="inline-form" method="post" action="{url_for('admin_database_maintenance')}" onsubmit="return confirm('Request PostgreSQL checkpoint? Normally this is not required.')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><input type="hidden" name="action" value="checkpoint"><button class="btn" type="submit">Checkpoint</button></form>
@@ -13994,7 +14026,7 @@ def top_node_page_v484():
     rows,start,end,limit=get_top_node_rows(period,q=q,sort_by=sort_by,order=sort_order,limit=limit)
     at=_request_target_ts()
     content=f"""
-    <div class="card top-card"><div class="top-grid"><div><div class="label">Updated</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div><div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div></div>
+    <div class="card top-card"><div class="top-grid"><div><div class="label">Updated</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div><div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div></div>
     <div class="label period-label">Period</div><div class="periods">{top_node_period_links(period,q=q,sort_by=sort_by,order=sort_order,limit=limit)}</div>
     <form class="search" method="get" action="{url_for('top_node_page')}"><input type="hidden" name="period" value="{escape(period)}"><input type="hidden" name="sort" value="{escape(sort_by)}"><input type="hidden" name="order" value="{escape(sort_order)}">{f'<input type="hidden" name="at" value="{escape(_datetime_local_value(at),quote=True)}">' if at else ''}<input name="q" value="{escape(q)}" placeholder="Search node / IP / VM UUID / interface"><input name="limit" value="{limit}" style="max-width:100px;min-width:80px"><button type="submit">Search</button></form></div>
     {_custom_snapshot_control('top_node_page',at,period=period,q=q or None,sort=sort_by,order=sort_order,limit=limit)}
@@ -14006,7 +14038,7 @@ def top_page_v484():
     period=clean_period(request.args.get("period","5m")); q=(request.args.get("q") or "").strip(); sort_by=clean_top_sort(request.args.get("sort","total")); sort_order=clean_sort_order(request.args.get("order","desc")); scope=clean_top_scope(request.args.get("scope","all")); limit=max(10,min(1000,safe_int(request.args.get("limit"),100)))
     rows,start,end,limit=get_top_vm_rows(period,q=q,sort_by=sort_by,order=sort_order,scope=scope,limit=limit); at=_request_target_ts()
     content=f"""
-    <div class="card top-card"><div class="top-grid"><div><div class="label">Latest Available</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div><div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div></div>
+    <div class="card top-card"><div class="top-grid"><div><div class="label">Latest Available</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div><div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div></div>
     <div class="label period-label">Snapshot lookback</div><div class="periods">{top_period_links(period,q=q,sort_by=sort_by,order=sort_order,scope=scope,limit=limit)}</div><div class="label period-label">Scope</div><div class="scope-links">{top_scope_links(period,q,sort_by,sort_order,scope,limit)}</div>
     <form class="search" method="get" action="{url_for('top_page')}"><input type="hidden" name="period" value="{escape(period)}"><input type="hidden" name="sort" value="{escape(sort_by)}"><input type="hidden" name="order" value="{escape(sort_order)}"><input type="hidden" name="scope" value="{escape(scope)}">{f'<input type="hidden" name="at" value="{escape(_datetime_local_value(at),quote=True)}">' if at else ''}<input name="q" value="{escape(q)}" placeholder="Search node / IPv4 / VM UUID / interface"><select name="limit" aria-label="Row limit"><option value="100" {'selected' if limit==100 else ''}>100 rows</option><option value="200" {'selected' if limit==200 else ''}>200 rows</option><option value="500" {'selected' if limit==500 else ''}>500 rows</option><option value="1000" {'selected' if limit==1000 else ''}>1000 rows</option></select><button type="submit">Search</button></form></div>
     {_custom_snapshot_control('top_page',at,period=period,q=q or None,sort=sort_by,order=sort_order,scope=scope,limit=limit)}
@@ -14518,7 +14550,7 @@ def _v490_admin_overview(stats):
         ("VMs", f"{stats['vms']:,}", f"{stats['hidden_vms']:,} hidden", url_for("admin_page",section="vms")),
         ("Current abuse", f"{stats['abuse']:,}", "Open policy and history", url_for("admin_abuse_page")),
         ("Queue", f"{stats['queue']:,}", "Waiting or running", url_for("admin_page",section="maintenance")),
-        ("Database", human(s['db_size']+s['wal_size']), "DB + WAL", url_for("admin_page",section="maintenance")),
+        ("PostgreSQL data", human(s['db_size']), f"WAL reserve {human(s['wal_size'])}", url_for("admin_page",section="maintenance")),
     ]
     html = ''.join(f'<a class="admin-kpi" href="{escape(href,quote=True)}"><span>{escape(label)}</span><b>{escape(value)}</b><small>{escape(sub)}</small></a>' for label,value,sub,href in cards)
     quick = [
@@ -17367,7 +17399,7 @@ def _v48105_login_document(next_url, username_value, error_html, no_users_note):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Sign in · Bandwidth Monitor</title>
+<title>Sign in · VirtInfra Monitor</title>
 <style>
 *{{box-sizing:border-box}}:root{{--bg:#f4f7fb;--panel:#ffffff;--panel-2:#f8fafc;--line:#d8e0ea;--text:#172033;--muted:#66758a;--brand:#2f6fed;--brand-2:#2458c8;--shadow:0 24px 70px rgba(31,52,83,.16);--input:#fff}}html[data-theme=dark]{{--bg:#07111f;--panel:#0f1b2c;--panel-2:#122239;--line:#2b3e58;--text:#edf4fc;--muted:#9fb0c4;--brand:#4f7df3;--brand-2:#3f6de3;--shadow:0 28px 80px rgba(0,0,0,.38);--input:#0b1728}}html,body{{min-height:100%;margin:0}}body{{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 8%,rgba(47,111,237,.16),transparent 34%),radial-gradient(circle at 88% 92%,rgba(62,180,255,.10),transparent 35%),var(--bg);color:var(--text);display:flex;flex-direction:column}}
 .login-topbar{{height:76px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;border-bottom:1px solid color-mix(in srgb,var(--line) 78%,transparent);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px)}}.login-brand{{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:-.025em}}.brand-mark{{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,var(--brand),#69a5ff);box-shadow:0 7px 20px rgba(47,111,237,.30);display:grid;place-items:center}}.brand-mark:before{{content:"";width:16px;height:13px;border:2px solid #fff;border-radius:4px;box-shadow:inset 0 -4px 0 rgba(255,255,255,.22)}}.brand-copy b,.brand-copy small{{display:block}}.brand-copy b{{font-size:15px}}.brand-copy small{{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-top:2px}}
@@ -17378,8 +17410,8 @@ def _v48105_login_document(next_url, username_value, error_html, no_users_note):
 <script>(function(){{var m='auto';try{{m=localStorage.getItem('bw-theme-mode')||'auto'}}catch(e){{}}var h=new Date().getHours();var r=m==='auto'?((h>=18||h<6)?'dark':'light'):m;document.documentElement.setAttribute('data-theme-mode',m);document.documentElement.setAttribute('data-theme',r)}})();</script>
 </head>
 <body>
-<header class="login-topbar"><div class="login-brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-copy"><b>Bandwidth Monitor</b><small>Operations Console</small></span></div><div class="theme-switch" role="group" aria-label="Theme mode"><button type="button" data-theme-mode="auto">Auto</button><button type="button" data-theme-mode="dark">Dark</button><button type="button" data-theme-mode="light">Light</button></div></header>
-<main class="login-main"><section class="login-shell"><div class="login-intro"><h1>Welcome back</h1><p>Sign in to access infrastructure monitoring and operations.</p></div><div class="login-card-pro">{error_html}{no_users_note}<form method="post" action="{action}"><input type="hidden" name="next" value="{escape(next_url,quote=True)}"><div class="field"><label for="login-username">Username</label><input id="login-username" name="username" value="{escape(username_value)}" autocomplete="username" autofocus required></div><div class="field"><label for="login-password">Password</label><div class="password-wrap"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" aria-label="Show password">Show</button></div></div><button class="login-submit" type="submit">Sign in</button></form><div class="login-security">Authorized access only</div></div></section></main><footer class="login-footer">Bandwidth Monitor · Secure operations access</footer>
+<header class="login-topbar"><div class="login-brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-copy"><b>VirtInfra Monitor</b><small>Operations Console</small></span></div><div class="theme-switch" role="group" aria-label="Theme mode"><button type="button" data-theme-mode="auto">Auto</button><button type="button" data-theme-mode="dark">Dark</button><button type="button" data-theme-mode="light">Light</button></div></header>
+<main class="login-main"><section class="login-shell"><div class="login-intro"><h1>Welcome back</h1><p>Sign in to access infrastructure monitoring and operations.</p></div><div class="login-card-pro">{error_html}{no_users_note}<form method="post" action="{action}"><input type="hidden" name="next" value="{escape(next_url,quote=True)}"><div class="field"><label for="login-username">Username</label><input id="login-username" name="username" value="{escape(username_value)}" autocomplete="username" autofocus required></div><div class="field"><label for="login-password">Password</label><div class="password-wrap"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" aria-label="Show password">Show</button></div></div><button class="login-submit" type="submit">Sign in</button></form><div class="login-security">Authorized access only</div></div></section></main><footer class="login-footer">VirtInfra Monitor · Secure operations access</footer>
 <script>
 function readMode(){{try{{return localStorage.getItem('bw-theme-mode')||'auto'}}catch(e){{return'auto'}}}}function resolved(m){{if(m==='dark'||m==='light')return m;var h=new Date().getHours();return(h>=18||h<6)?'dark':'light'}}function applyMode(m,p){{if(!['auto','dark','light'].includes(m))m='auto';if(p)try{{localStorage.setItem('bw-theme-mode',m)}}catch(e){{}}document.documentElement.setAttribute('data-theme-mode',m);document.documentElement.setAttribute('data-theme',resolved(m));document.querySelectorAll('[data-theme-mode]').forEach(function(b){{b.classList.toggle('active',b.dataset.themeMode===m)}})}}applyMode(readMode(),false);document.addEventListener('click',function(e){{var t=e.target.closest('[data-theme-mode]');if(t){{applyMode(t.dataset.themeMode,true);return}}var p=e.target.closest('.password-toggle');if(p){{var i=document.getElementById('login-password');var show=i.type==='password';i.type=show?'text':'password';p.textContent=show?'Hide':'Show';p.setAttribute('aria-label',show?'Hide password':'Show password')}}}});
 </script>
@@ -17507,7 +17539,7 @@ def _v48106_login_document(*, action, title, subtitle, username_value, error_htm
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{escape(title)} · Bandwidth Monitor</title>
+<title>{escape(title)} · VirtInfra Monitor</title>
 <style>
 *{{box-sizing:border-box}}:root{{--bg:#f4f7fb;--panel:#ffffff;--panel-2:#f5f7fb;--line:#d8e0ea;--text:#172033;--muted:#66758a;--brand:#2f6fed;--brand-2:#2458c8;--shadow:0 24px 70px rgba(31,52,83,.16);--input:#ffffff;--input-2:#f8fbff}}html[data-theme=dark]{{--bg:#050c16;--panel:#0d1726;--panel-2:#111e30;--line:#24364f;--text:#edf4fc;--muted:#9fb0c4;--brand:#4f7df3;--brand-2:#3f6de3;--shadow:0 28px 80px rgba(0,0,0,.42);--input:#050d18;--input-2:#0a1421}}html,body{{min-height:100%;margin:0}}body{{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 8%,rgba(47,111,237,.15),transparent 34%),radial-gradient(circle at 88% 92%,rgba(62,180,255,.08),transparent 35%),var(--bg);color:var(--text);display:flex;flex-direction:column}}
 .login-topbar{{height:76px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;border-bottom:1px solid color-mix(in srgb,var(--line) 82%,transparent);background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(14px)}}.login-brand{{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:-.025em}}.brand-mark{{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,var(--brand),#69a5ff);box-shadow:0 7px 20px rgba(47,111,237,.30);display:grid;place-items:center}}.brand-mark:before{{content:"";width:16px;height:13px;border:2px solid #fff;border-radius:4px;box-shadow:inset 0 -4px 0 rgba(255,255,255,.22)}}.brand-copy b,.brand-copy small{{display:block}}.brand-copy b{{font-size:15px}}.brand-copy small{{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-top:2px}}
@@ -17518,8 +17550,8 @@ def _v48106_login_document(*, action, title, subtitle, username_value, error_htm
 <script>(function(){{var m='auto';try{{m=localStorage.getItem('bw-theme-mode')||'auto'}}catch(e){{}}var h=new Date().getHours();var r=m==='auto'?((h>=18||h<6)?'dark':'light'):m;document.documentElement.setAttribute('data-theme-mode',m);document.documentElement.setAttribute('data-theme',r)}})();</script>
 </head>
 <body>
-<header class="login-topbar"><div class="login-brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-copy"><b>Bandwidth Monitor</b><small>Operations Console</small></span></div><div class="theme-switch" role="group" aria-label="Theme mode"><button type="button" data-theme-mode="auto">Auto</button><button type="button" data-theme-mode="dark">Dark</button><button type="button" data-theme-mode="light">Light</button></div></header>
-<main class="login-main"><section class="login-shell"><div class="login-intro"><h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div><div class="login-card-pro">{error_html}{note_html}<form method="post" action="{action}"><input type="hidden" name="next" value="{escape(next_url,quote=True)}"><div class="field"><label for="login-username">Username</label><input id="login-username" name="username" value="{escape(username_value)}" autocomplete="username" autofocus required></div>{extra_fields}<button class="login-submit" type="submit">{escape(button_label)}</button></form><div class="login-security">Authorized access only</div></div></section></main><footer class="login-footer">Bandwidth Monitor · Secure operations access</footer>
+<header class="login-topbar"><div class="login-brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-copy"><b>VirtInfra Monitor</b><small>Operations Console</small></span></div><div class="theme-switch" role="group" aria-label="Theme mode"><button type="button" data-theme-mode="auto">Auto</button><button type="button" data-theme-mode="dark">Dark</button><button type="button" data-theme-mode="light">Light</button></div></header>
+<main class="login-main"><section class="login-shell"><div class="login-intro"><h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div><div class="login-card-pro">{error_html}{note_html}<form method="post" action="{action}"><input type="hidden" name="next" value="{escape(next_url,quote=True)}"><div class="field"><label for="login-username">Username</label><input id="login-username" name="username" value="{escape(username_value)}" autocomplete="username" autofocus required></div>{extra_fields}<button class="login-submit" type="submit">{escape(button_label)}</button></form><div class="login-security">Authorized access only</div></div></section></main><footer class="login-footer">VirtInfra Monitor · Secure operations access</footer>
 <script>
 function readMode(){{try{{return localStorage.getItem('bw-theme-mode')||'auto'}}catch(e){{return'auto'}}}}
 function resolved(m){{if(m==='dark'||m==='light')return m;var h=new Date().getHours();return(h>=18||h<6)?'dark':'light'}}
@@ -22101,7 +22133,7 @@ def page(title, content):
 
 
 # ========================================================================
-# BW Monitor v48.12.8 - simplified Abuse dashboard
+# VirtInfra Monitor v48.12.8 - simplified Abuse dashboard
 # ========================================================================
 V48127_VERSION = "48.12.7"
 
@@ -22553,7 +22585,7 @@ def page(title, content):
     return response
 
 # ========================================================================
-# BW Monitor v48.12.8 - Top-VM-style Abuse table, transparent ratios,
+# VirtInfra Monitor v48.12.8 - Top-VM-style Abuse table, transparent ratios,
 # exact event minutes, and synchronized Admin cleanup.
 # ========================================================================
 V48128_VERSION = "48.12.8"
@@ -23177,7 +23209,7 @@ except Exception:
     app.logger.exception("Could not run v48.12.8 ratio migration")
 
 # ========================================================================
-# BW Monitor v48.12.9 - operations-first Abuse table, colored rule chips,
+# VirtInfra Monitor v48.12.9 - operations-first Abuse table, colored rule chips,
 # exact active duration, explicit per-metric sorting, and complete cleanup.
 # ========================================================================
 V48129_VERSION = "48.12.9"
@@ -25591,7 +25623,10 @@ _v48133_storage_disk_table = _v48135_storage_disk_table
 
 def _v48135_storage_node_table(conn, values, start_ts):
     """Render only real filesystem roots and dedupe sandbox aliases."""
-    where = ["s.last_seen>=?"]
+    where = [
+        "s.last_seen>=?",
+        "(ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL))",
+    ]
     params = [start_ts]
     if values.get("node"):
         where.append("s.node=?"); params.append(values["node"])
@@ -26060,7 +26095,7 @@ def _v48137_storage_target(conn, values):
     if requested_at is not None:
         target = bucket_for(requested_at)
     else:
-        target = latest - period_seconds(clean_period(values.get("period") or "5m"))
+        target = latest - max(0, period_seconds(clean_period(values.get("period") or "5m")) - CACHE_BUCKET_SECONDS)
     selected_row = conn.execute(
         f"SELECT MAX(bucket) FROM node_push_snapshots WHERE {where_sql} AND bucket<=?",
         params + [target],
@@ -26706,7 +26741,7 @@ def storage_io_page_v48138():
     <div class="card top-card storage-top-card">
       <div class="top-grid">
         <div><div class="label">Latest Available</div><div class="value">{fmt_full(latest_ts)}</div></div>
-        <div><div class="label">Timezone</div><div class="value">{escape(TZ_NAME)}</div></div>
+        <div><div class="label">Timezone</div><div class="value">{escape(display_timezone_name())}</div></div>
         <div><div class="label">Selected Snapshot</div><div class="value">{escape(selected_text)}</div></div>
       </div>
       <div class="table-title-row"><div><div class="label period-label">Snapshot lookback</div></div><div class="storage-toolbar-state"><span class="{history_class}">{history_label}</span></div></div>
@@ -27591,7 +27626,10 @@ def _v48140_rebuild_all_summaries(conn):
 
 def _v48140_bootstrap_performance():
     conn = db()
+    locked = False
     try:
+        conn.execute("SELECT pg_advisory_lock(hashtextextended(?, 0))", ("virtinfra:summary-bootstrap",))
+        locked = True
         # WAL is a database-level setting; do it once at worker startup, not per request.
         conn.execute("PRAGMA journal_mode=WAL")
         ensure_v48140_performance_schema(conn)
@@ -27603,6 +27641,12 @@ def _v48140_bootstrap_performance():
         conn.execute("PRAGMA optimize")
         conn.commit()
     finally:
+        if locked:
+            try:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(?, 0))", ("virtinfra:summary-bootstrap",))
+                conn.commit()
+            except Exception:
+                pass
         conn.close()
 
 
@@ -27664,7 +27708,12 @@ def _v48140_public_ip_join(alias="s"):
 
 
 def _v48140_disk_search_clause(values, summary_alias="s"):
-    clauses = [f"{summary_alias}.last_seen>=?", "COALESCE(vi.status,'active')!='hidden'"]
+    clauses = [
+        f"{summary_alias}.last_seen>=?",
+        "COALESCE(vi.status,'active')!='hidden'",
+        "vi.deleted_at IS NULL",
+        "(ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL))",
+    ]
     params = []
     if values.get("node"):
         clauses.append(f"{summary_alias}.node=?")
@@ -27696,6 +27745,7 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
       SELECT COUNT(*)
         FROM vm_disk_summary_current s
         LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+        LEFT JOIN node_inventory ni ON ni.node=s.node
         LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
        WHERE {where_sql}
     """, [PUBLIC_BRIDGE] + params).fetchone()[0], 0)
@@ -27708,6 +27758,7 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
              s.read_bps,s.write_bps,s.read_iops,s.write_iops,s.last_seen
         FROM vm_disk_summary_current s
         LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+        LEFT JOIN node_inventory ni ON ni.node=s.node
         LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
        WHERE {where_sql}
        ORDER BY {sort_map[values['sort']]} {direction},s.node COLLATE NOCASE,s.vm_uuid COLLATE NOCASE
@@ -27731,25 +27782,42 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
 
 def _v48140_fast_filter_options(conn, values):
     nodes = [str(r[0]) for r in conn.execute("""
-      SELECT node FROM (
-        SELECT node FROM vm_disk_summary_current
-        UNION SELECT node FROM node_storage_mount_summary_current
-      ) GROUP BY node ORDER BY node COLLATE NOCASE
+      SELECT x.node
+        FROM (
+          SELECT s.node
+            FROM vm_disk_summary_current s
+            JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+           WHERE COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+          UNION
+          SELECT s.node FROM node_storage_mount_summary_current s
+        ) x
+        LEFT JOIN node_inventory ni ON ni.node=x.node
+       WHERE ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL)
+       GROUP BY x.node ORDER BY x.node COLLATE NOCASE
     """).fetchall()]
-    if values.get("node"):
-        mounts = [str(r[0]) for r in conn.execute("""
-          SELECT mount FROM (
-            SELECT mount FROM vm_disk_current WHERE role='customer' AND node=? AND mount!=''
-            UNION SELECT mount FROM node_storage_mount_summary_current WHERE node=? AND mount!=''
-          ) GROUP BY mount ORDER BY mount COLLATE NOCASE
-        """, (values["node"], values["node"])).fetchall()]
-    else:
-        mounts = [str(r[0]) for r in conn.execute("""
-          SELECT mount FROM (
-            SELECT mount FROM vm_disk_current WHERE role='customer' AND mount!=''
-            UNION SELECT mount FROM node_storage_mount_summary_current WHERE mount!=''
-          ) GROUP BY mount ORDER BY mount COLLATE NOCASE
-        """).fetchall()]
+    node_filter = values.get("node")
+    params = [node_filter, node_filter] if node_filter else []
+    node_sql = " AND d.node=?" if node_filter else ""
+    node_sql2 = " AND s.node=?" if node_filter else ""
+    mounts = [str(r[0]) for r in conn.execute(f"""
+      SELECT mount FROM (
+        SELECT d.mount
+          FROM vm_disk_current d
+          JOIN vm_inventory vi ON vi.node=d.node AND vi.vm_uuid=d.vm_uuid
+          LEFT JOIN node_inventory ni ON ni.node=d.node
+         WHERE d.role='customer' AND d.mount!=''
+           AND COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+           AND (ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL))
+           {node_sql}
+        UNION
+        SELECT s.mount
+          FROM node_storage_mount_summary_current s
+          LEFT JOIN node_inventory ni2 ON ni2.node=s.node
+         WHERE s.mount!=''
+           AND (ni2.node IS NULL OR (COALESCE(ni2.status,'active')!='hidden' AND ni2.deleted_at IS NULL))
+           {node_sql2}
+      ) q GROUP BY mount ORDER BY mount COLLATE NOCASE
+    """, params).fetchall()]
     node_options = ['<option value="">All nodes</option>']
     for item in nodes:
         node_options.append(f'<option value="{escape(item,quote=True)}"{" selected" if item == values.get("node") else ""}>{escape(item)}</option>')
@@ -27969,8 +28037,10 @@ def _v48140_response_performance(response):
     if started is not None:
         duration_ms = max(0.0, (_v48140_perf_counter() - started) * 1000.0)
         response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
+        response.headers["X-VirtInfra-App-Time-Ms"] = f"{duration_ms:.1f}"
         response.headers["X-BW-App-Time-Ms"] = f"{duration_ms:.1f}"
-    response.headers["X-BW-Performance"] = "50.0.0-postgres-native"
+    response.headers["X-VirtInfra-Performance"] = "50.2.1-csrf-topvm-fix"
+    response.headers["X-BW-Performance"] = "50.2.1-csrf-topvm-fix"
     if (
         response.status_code == 200
         and not response.direct_passthrough
@@ -28034,7 +28104,10 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
     }
     if values.get("sort") not in sort_map:
         values["sort"] = "writeiops"
-    where = ["s.last_seen>=?"]
+    where = [
+        "s.last_seen>=?",
+        "(ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL))",
+    ]
     params = [start_ts]
     if values.get("node"):
         where.append("s.node=?")
@@ -28046,9 +28119,13 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
     where_sql = " AND ".join(where)
     cte = f"""
       WITH vc AS (
-        SELECT node,COUNT(*) AS vm_count,COALESCE(SUM(disk_count),0) AS disk_count
-          FROM vm_disk_summary_current
-         GROUP BY node
+        SELECT d.node,COUNT(*) AS vm_count,COALESCE(SUM(d.disk_count),0) AS disk_count
+          FROM vm_disk_summary_current d
+          JOIN vm_inventory vi ON vi.node=d.node AND vi.vm_uuid=d.vm_uuid
+          LEFT JOIN node_inventory ni0 ON ni0.node=d.node
+         WHERE COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+           AND (ni0.node IS NULL OR (COALESCE(ni0.status,'active')!='hidden' AND ni0.deleted_at IS NULL))
+         GROUP BY d.node
       ),
       g AS (
         SELECT s.node,COALESCE(MAX(b.primary_ipv4),'') AS public_ipv4,
@@ -28059,6 +28136,7 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
                MAX(s.last_seen) AS last_seen,COALESCE(MAX(vc.disk_count),0) AS disk_count,
                COALESCE(MAX(vc.vm_count),0) AS vm_count
           FROM node_storage_mount_summary_current s
+          LEFT JOIN node_inventory ni ON ni.node=s.node
           LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
           LEFT JOIN vc ON vc.node=s.node
          WHERE {where_sql}
@@ -28085,8 +28163,10 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
                  s.size,s.used,s.avail,s.use_percent,s.read_bps,s.write_bps,s.read_iops,s.write_iops,
                  s.util_percent,s.last_seen,s.disk_count,s.vm_count
             FROM node_storage_mount_summary_current s
+            LEFT JOIN node_inventory ni ON ni.node=s.node
             LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
-           WHERE s.node IN ({ph})
+           WHERE (ni.node IS NULL OR (COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL))
+             AND s.node IN ({ph})
            ORDER BY s.node COLLATE NOCASE,
                     CASE s.mount WHEN '/' THEN 0 WHEN '[SWAP]' THEN 1 WHEN '/boot' THEN 2 WHEN '/boot/efi' THEN 3 WHEN '/home' THEN 4 ELSE 10 END,
                     s.mount COLLATE NOCASE
@@ -28184,7 +28264,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.0.4-prod-r1-one-command",
+            "version":"50.2.2-prod-r1-original-time-restore",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28276,3 +28356,207 @@ def _v48139_current_rows(values):
     finally:
         conn.close()
     return _v48139_current_rows_v48140_summary(values)
+
+
+# ---------------------------------------------------------------------------
+# VirtInfra Monitor v50.2.2 original time behavior restore
+# ---------------------------------------------------------------------------
+# Time display is intentionally fixed to the original Asia/Ho_Chi_Minh zone.
+# There is no runtime timezone switch. Stored timestamps remain Unix/UTC values;
+# only presentation uses the original UTC+7 clock.
+
+
+def display_timezone_name():
+    return TZ_NAME
+
+
+def _display_timezone():
+    return TZ
+
+
+def fmt_full(ts):
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fmt_range(ts):
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def fmt_push(ts):
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%H:%M")
+
+
+def fmt_chart_label(ts, step):
+    dt = datetime.fromtimestamp(int(ts), TZ)
+    if step >= 86400:
+        return dt.strftime("%m-%d")
+    if step >= 3600:
+        return dt.strftime("%m-%d %H:%M")
+    return dt.strftime("%H:%M")
+
+
+def _parse_datetime_local(value):
+    value = (value or "").strip()
+    if not value:
+        return None
+    # Keep old @epoch links readable, but new UI keeps the original local-time
+    # behavior and does not rewrite normal datetime-local values into @epoch.
+    if value.startswith("@"):
+        value = value[1:]
+    if value.isdigit():
+        try:
+            ts = int(value)
+            return max(now_ts() - HOURLY_RETENTION_DAYS * 86400, min(now_ts(), ts))
+        except ValueError:
+            return None
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(value, fmt).replace(tzinfo=TZ)
+            ts = int(dt.timestamp())
+            return max(now_ts() - HOURLY_RETENTION_DAYS * 86400, min(now_ts(), ts))
+        except ValueError:
+            pass
+    return None
+
+
+def _datetime_local_value(ts):
+    if not ts:
+        return ""
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%dT%H:%M")
+
+
+@app.route("/livez")
+def virtinfra_livez():
+    return jsonify({"status": "ok", "service": PRODUCT_NAME}), 200
+
+
+@app.route("/healthz")
+def virtinfra_healthz():
+    try:
+        info = dbapi.healthcheck()
+        return jsonify({"status": "ok", "service": PRODUCT_NAME, "database": info.get("database")}), 200
+    except Exception as exc:
+        return jsonify({"status": "error", "service": PRODUCT_NAME, "database": "unavailable", "detail": str(exc)[:300]}), 503
+
+
+# Keep the existing Admin overview unchanged. The temporary display-timezone
+# card and POST endpoint were removed to restore the original fixed UTC+7 UI.
+_v502_admin_overview_base = _v490_admin_overview
+
+
+def _v490_admin_overview(stats):
+    return _v502_admin_overview_base(stats)
+
+
+# PostgreSQL-backed cache generation invalidates every Gunicorn worker even when
+# Redis is disabled. This makes Hide/Restore visible immediately across workers.
+def _v48140_cache_generation():
+    global _v48140_local_generation
+    try:
+        conn = db()
+        try:
+            row = conn.execute("SELECT value FROM admin_settings WHERE key='page_cache_generation'").fetchone()
+            if not row:
+                conn.execute("""
+                  INSERT INTO admin_settings(key,value,updated_at)
+                  VALUES('page_cache_generation','1',?)
+                  ON CONFLICT(key) DO NOTHING
+                """, (now_ts(),))
+                conn.commit()
+                return 1
+            return max(1, safe_int(row[0], 1))
+        finally:
+            conn.close()
+    except Exception:
+        return max(1, _v48140_local_generation)
+
+
+def _v48140_bump_cache_generation():
+    global _v48140_local_generation
+    with _v48140_local_lock:
+        _v48140_local_generation += 1
+        _v48140_local_cache.clear()
+    generation = _v48140_local_generation
+    try:
+        conn = db()
+        try:
+            row = conn.execute("""
+              INSERT INTO admin_settings(key,value,updated_at)
+              VALUES('page_cache_generation','2',?)
+              ON CONFLICT(key) DO UPDATE SET
+                value=CAST(CAST(admin_settings.value AS INTEGER)+1 AS TEXT),
+                updated_at=excluded.updated_at
+              RETURNING value
+            """, (now_ts(),)).fetchone()
+            conn.commit()
+            generation = max(generation, safe_int((row or [generation])[0], generation))
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return generation
+
+
+def _virtinfra_wrap_inventory_mutation(endpoint_name):
+    current = app.view_functions.get(endpoint_name)
+    if current is None or getattr(current, "_virtinfra_cache_mutation", False):
+        return
+    def wrapper(*args, **kwargs):
+        response = app.make_response(current(*args, **kwargs))
+        if request.method == "POST" and response.status_code < 400:
+            _v48140_bump_cache_generation()
+        return response
+    wrapper.__name__ = getattr(current, "__name__", endpoint_name)
+    wrapper.__doc__ = getattr(current, "__doc__", None)
+    wrapper._virtinfra_cache_mutation = True
+    app.view_functions[endpoint_name] = wrapper
+
+
+for _virtinfra_endpoint in (
+    "admin_delete_node", "admin_restore_node", "admin_delete_vm", "admin_restore_vm",
+    "admin_bulk_nodes", "admin_bulk_vms", "admin_purge_node_vms",
+):
+    _virtinfra_wrap_inventory_mutation(_virtinfra_endpoint)
+
+
+VIRTINFRA_FINAL_CSS = r"""
+<style id="virtinfra-v502-final-ui">
+/* Current Abuse must fit a normal desktop viewport instead of forcing 2380px. */
+.abuse-current-v48129,.abuse-current-v48139{width:100%!important;min-width:0!important;table-layout:fixed!important}
+.abuse-current-v48139 th,.abuse-current-v48139 td{padding:7px 6px!important;font-size:10px!important;vertical-align:top}
+.abuse-current-v48139 th:nth-child(1){width:3%!important}.abuse-current-v48139 th:nth-child(2){width:14%!important}.abuse-current-v48139 th:nth-child(3){width:15%!important}.abuse-current-v48139 th:nth-child(4){width:12%!important}.abuse-current-v48139 th:nth-child(5){width:12%!important}.abuse-current-v48139 th:nth-child(6){width:9%!important}.abuse-current-v48139 th:nth-child(7){width:10%!important}.abuse-current-v48139 th:nth-child(8){width:10%!important}.abuse-current-v48139 th:nth-child(9){width:10%!important}.abuse-current-v48139 th:nth-child(10){width:5%!important}
+.abuse-current-v48139 .uuid-cell,.abuse-current-v48139 .resource-primary,.abuse-current-v48139 .resource-secondary{min-width:0!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
+.abuse-current-v48139 .resource-meter{min-width:0!important}.abuse-current-v48139 .resource-primary{font-size:10px!important}.abuse-current-v48139 .resource-secondary{font-size:8px!important}
+@media(max-width:1200px){.abuse-current-v48139 th,.abuse-current-v48139 td{padding:6px 4px!important;font-size:9px!important}.abuse-current-v48139 .metric-chip{padding:3px 4px!important}}
+@media(max-width:900px){
+.abuse-current-v48139,.abuse-current-v48139 tbody,.abuse-current-v48139 tr,.abuse-current-v48139 td{display:block!important;width:100%!important;min-width:0!important}
+.abuse-current-v48139 thead{display:none!important}
+.abuse-current-v48139 tr{margin:0 0 12px!important;padding:8px!important;border:1px solid var(--line,#d9e1ee)!important;border-radius:10px!important;background:var(--card,#fff)!important;box-sizing:border-box!important}
+.abuse-current-v48139 td{position:relative!important;min-height:32px!important;padding:7px 6px 7px 39%!important;border:0!important;border-bottom:1px dashed var(--line,#d9e1ee)!important;box-sizing:border-box!important;font-size:10px!important;text-align:left!important}
+.abuse-current-v48139 td:last-child{border-bottom:0!important}
+.abuse-current-v48139 td::before{position:absolute;left:6px;top:7px;width:31%;font-size:9px;font-weight:900;letter-spacing:.04em;color:var(--muted,#64748b);text-transform:uppercase;white-space:normal}
+.abuse-current-v48139 td:nth-child(1)::before{content:"#"}.abuse-current-v48139 td:nth-child(2)::before{content:"Node / VM"}.abuse-current-v48139 td:nth-child(3)::before{content:"Reason / Severity"}.abuse-current-v48139 td:nth-child(4)::before{content:"Network AVG"}.abuse-current-v48139 td:nth-child(5)::before{content:"PPS Peak / Window"}.abuse-current-v48139 td:nth-child(6)::before{content:"CPU"}.abuse-current-v48139 td:nth-child(7)::before{content:"RAM"}.abuse-current-v48139 td:nth-child(8)::before{content:"Capacity"}.abuse-current-v48139 td:nth-child(9)::before{content:"Disk I/O"}.abuse-current-v48139 td:nth-child(10)::before{content:"Last seen"}
+.abuse-current-v48139 .resource-meter,.abuse-current-v48139 .metric-pair-rich{width:100%!important;max-width:none!important}
+}
+</style>
+"""
+
+
+_page_virtinfra_v502_base = page
+
+
+def page(title, content):
+    response = _page_virtinfra_v502_base(title, VIRTINFRA_FINAL_CSS + content)
+    try:
+        html = response.get_data(as_text=True)
+        html = html.replace("VirtInfra Monitor", PRODUCT_NAME)
+        response.set_data(html)
+    except Exception:
+        app.logger.exception("Could not apply VirtInfra final UI layer")
+    return response

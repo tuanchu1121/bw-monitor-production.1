@@ -26,7 +26,7 @@ fail(){ echo "ERROR: $*" >&2; exit 1; }
 cd "$ROOT"
 
 log "Validate release identity"
-[[ "$(cat VERSION)" == "50.0.4-prod-r1-one-command" ]] || fail "VERSION mismatch"
+[[ "$(cat VERSION)" == "50.2.2-prod-r1-original-time-restore" ]] || fail "VERSION mismatch"
 [[ -f app/app.py && -f app/bw_pg.py && -f deploy/agent/agent.py ]] || fail "full source tree is incomplete"
 [[ ! -d release && ! -d enterprise ]] || fail "legacy duplicate runtime trees must not be shipped"
 
@@ -98,4 +98,4 @@ fi
 
 find . -path './.git' -prune -o -path './dist' -prune -o -type d -name __pycache__ -prune -exec rm -rf {} +
 find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -not -path './.git/*' -not -path './dist/*' -delete
-printf '\nPASS: BW Monitor v50 PostgreSQL Native preflight\n'
+printf '\nPASS: VirtInfra Monitor v50 PostgreSQL Native preflight\n'

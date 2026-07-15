@@ -53,6 +53,6 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
-              --title "BW Monitor $GITHUB_REF_NAME" \
+              --title "VirtInfra Monitor $GITHUB_REF_NAME" \
               --generate-notes
           fi
