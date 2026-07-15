@@ -13,7 +13,7 @@ def need(condition, message):
     if not condition:
         raise AssertionError(message)
 
-need("V501_VERSION = \"50.1.0-prod-r1-production-hardening\"" in app, "v50.1 marker missing")
+need("V501_VERSION = \"50.1.1-prod-r1-stability-fix\"" in app, "v50.1.1 marker missing")
 need('@app.route("/livez")' in app and '@app.route("/healthz")' in app, "health endpoints missing")
 need("bw-monitor-health-watch.timer" in installer, "health watchdog is not installed")
 need("StartLimitIntervalSec=0" in service and "Restart=always" in service, "systemd recovery hardening missing")
@@ -31,3 +31,11 @@ need("WHERE vis.node=svl.node AND vis.vm_uuid=svl.vm_uuid" in app, "Dashboard lo
 need("COALESCE(ni.status,'active')!='hidden'" in app, "Storage hidden-node predicate missing")
 need("page_cache_generation" in app and "_v501_invalidate_visibility_cache" in app, "cross-worker cache invalidation missing")
 print("PASS: v50.1 production hardening contract")
+
+# v50.1.1 stability invariants.
+need("global TZ_NAME, TZ\n" in app, "display timezone should not mutate retention/storage offset")
+need("global TZ_NAME, TZ, RETENTION_TZ_OFFSET_SECONDS" not in app, "display timezone still mutates retention offset")
+need('if value.startswith("@")' in app and 'return f"@{timestamp}"' in app, "absolute custom snapshot preservation missing")
+need("Current VMs on Node" in app and "_v5011_node_vm_inventory_rows" in app, "authoritative per-node VM inventory missing")
+need("This list does not depend on br0/br1 interface rows" in app, "node VM list independence marker missing")
+print("PASS: v50.1.1 timezone and node inventory stability contract")

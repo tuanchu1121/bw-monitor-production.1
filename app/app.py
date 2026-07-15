@@ -3291,7 +3291,7 @@ def node_table(rows, sort_by="node", order="asc"):
         total_public += float(public_total or 0)
         total_private += float(private_total or 0)
         total_all += float(node_total or 0)
-        _row_at = (request.args.get("at") or "").strip()
+        _row_at = _at_param() or ""
         href = url_for("node_page", node=node, period=period, **({"at": _row_at} if _row_at else {}))
         source = str(net_source or "-")
         source_cls = "active" if source == "NIC" else ("yellow" if source in ("MIXED", "VM") else "stale")
@@ -3416,7 +3416,7 @@ def interface_table(title, bridge, node, rows, period, q="", sort_by="total", or
         cpu_percent, vcpu_current, core_cpu_percent, ram_rss_kib, ram_current_kib,
         disk_read_bps, disk_write_bps, row_vm_status, last_push, vm_last_seen, interval_seconds,
     ) in rows:
-        _row_at = (request.args.get("at") or "").strip()
+        _row_at = _at_param() or ""
         href = url_for("vm_page", node=node, vm_uuid=vm_uuid, bridge=bridge, iface=iface, period=period, **({"at": _row_at} if _row_at else {}))
         href_e = escape(href, quote=True)
         live = vm_live_status(vm_last_seen)
@@ -5569,7 +5569,7 @@ def top_vm_table(rows, period, q, sort_by, order, scope, limit):
         ram_rss_kib, ram_current_kib, disk_read_bps, disk_write_bps,
         last_push, interval_seconds, public_ipv4, private_ipv4,
     ) in rows:
-        _row_at = (request.args.get("at") or "").strip()
+        _row_at = _at_param() or ""
         href = url_for("node_page", node=node, period=period, q=vm_uuid, **({"at": _row_at} if _row_at else {}))
         public_ip = compact_ipv4(public_ipv4)
         ip_lines = f'<small class="node-ipv4" title="Public IPv4">{escape(public_ip)}</small>' if public_ip else ""
@@ -5683,7 +5683,7 @@ def top_node_table(rows, period, q, sort_by, order, limit):
             pub_pps_sort, pri_pps_sort, node_pps_sort,
             public_ipv4, private_ipv4,
         ) = r
-        _row_at = (request.args.get("at") or "").strip()
+        _row_at = _at_param() or ""
         href = url_for("node_page", node=node, period=period, **({"at": _row_at} if _row_at else {}))
         pub_pps = float(public_packets or 0) / max(1.0, float(public_interval or CACHE_BUCKET_SECONDS))
         pri_pps = float(private_packets or 0) / max(1.0, float(private_interval or CACHE_BUCKET_SECONDS))
@@ -14049,28 +14049,28 @@ app.view_functions["top_page"] = top_page_v484
 def node_sort_header(label,key,period,q,current_sort,current_order,vm_status="active"):
     current_sort=clean_node_sort(current_sort); current_order=clean_sort_order(current_order); default_order="asc" if key=="node" else "desc"; next_order=reverse_order(current_order) if current_sort==key else default_order
     arrow=" ↓" if current_sort==key and current_order=="desc" else (" ↑" if current_sort==key else "")
-    kwargs={"period":period,"q":q,"sort":key,"order":next_order}; at=request.args.get("at");
+    kwargs={"period":period,"q":q,"sort":key,"order":next_order}; at=_at_param();
     if at: kwargs["at"]=at
     return f'<a class="sort-link" href="{escape(url_for("index",**kwargs),quote=True)}">{escape(label)}{arrow}</a>'
 
 
 def sort_header(label,key,node,period,q,current_sort,current_order,vm_status="active"):
     current_sort=clean_interface_sort(current_sort); current_order=clean_sort_order(current_order); next_order=reverse_order(current_order) if current_sort==key else "desc"; arrow=" ↓" if current_sort==key and current_order=="desc" else (" ↑" if current_sort==key else "")
-    kwargs={"node":node,"period":period,"q":q,"sort":key,"order":next_order,"net":clean_node_net_mode(request.args.get("net","both"))}; at=request.args.get("at");
+    kwargs={"node":node,"period":period,"q":q,"sort":key,"order":next_order,"net":clean_node_net_mode(request.args.get("net","both"))}; at=_at_param();
     if at: kwargs["at"]=at
     return f'<a class="sort-link" href="{escape(url_for("node_page",**kwargs),quote=True)}">{escape(label)}{arrow}</a>'
 
 
 def top_sort_header(label,key,period,q,current_sort,current_order,scope,limit):
     current_sort=clean_top_sort(current_sort); current_order=clean_sort_order(current_order); next_order=reverse_order(current_order) if current_sort==key else "desc"; arrow=" ↓" if current_sort==key and current_order=="desc" else (" ↑" if current_sort==key else "")
-    kwargs={"period":period,"q":q,"sort":key,"order":next_order,"scope":scope,"limit":limit}; at=request.args.get("at");
+    kwargs={"period":period,"q":q,"sort":key,"order":next_order,"scope":scope,"limit":limit}; at=_at_param();
     if at: kwargs["at"]=at
     return f'<a class="sort-link" href="{escape(url_for("top_page",**kwargs),quote=True)}">{escape(label)}{arrow}</a>'
 
 
 def top_node_sort_header(label,key,period,q,current_sort,current_order,limit):
     current_sort=clean_top_node_sort(current_sort); current_order=clean_sort_order(current_order); default_order="asc" if key=="node" else "desc"; next_order=reverse_order(current_order) if current_sort==key else default_order; arrow=" ↓" if current_sort==key and current_order=="desc" else (" ↑" if current_sort==key else "")
-    kwargs={"period":period,"q":q,"sort":key,"order":next_order,"limit":limit}; at=request.args.get("at");
+    kwargs={"period":period,"q":q,"sort":key,"order":next_order,"limit":limit}; at=_at_param();
     if at: kwargs["at"]=at
     return f'<a class="sort-link" href="{escape(url_for("top_node_page",**kwargs),quote=True)}">{escape(label)}{arrow}</a>'
 
@@ -14105,7 +14105,10 @@ def _public_abuse_policy(cfg):
 
 def _at_param():
     value = (request.args.get("at") or "").strip()
-    return value or None
+    if not value:
+        return None
+    timestamp = _parse_datetime_local(value)
+    return f"@{timestamp}" if timestamp > 0 else None
 
 
 def period_links(current, endpoint="index", node=None, q="", vm_status="active", net="both"):
@@ -16044,7 +16047,7 @@ def _v48102_top_sort_link(label, key, period, q, current_sort, current_order, sc
         "scope": scope,
         "limit": limit,
     }
-    at = request.args.get("at")
+    at = _at_param()
     if at:
         kwargs["at"] = at
     href = url_for("top_page", **kwargs)
@@ -16075,7 +16078,7 @@ def top_vm_table(rows, period, q, sort_by, order, scope, limit):
             ram_rss_kib, ram_current_kib, disk_read_bps, disk_write_bps,
             last_push, interval_seconds, public_ipv4, private_ipv4,
         ) = row
-        row_at = (request.args.get("at") or "").strip()
+        row_at = _at_param() or ""
         href = url_for(
             "node_page", node=node, period=period, q=vm_uuid,
             **({"at": row_at} if row_at else {}),
@@ -16701,7 +16704,7 @@ def top_vm_table(rows, period, q, sort_by, order, scope, limit):
             last_push, interval_seconds, public_ipv4, private_ipv4,
             ram_available_kib, ram_unused_kib, ram_usable_kib,
         ) = row
-        row_at = (request.args.get("at") or "").strip()
+        row_at = _at_param() or ""
         href = url_for("node_page", node=node, period=period, q=vm_uuid, **({"at": row_at} if row_at else {}))
         public_ip = compact_ipv4(public_ipv4)
         ip_lines = f'<small class="node-ipv4" title="Public IPv4">{escape(public_ip)}</small>' if public_ip else ""
@@ -16803,7 +16806,7 @@ def interface_table(title, bridge, node, rows, period, q="", sort_by="total", or
             disk_read_bps, disk_write_bps, row_vm_status, last_push, vm_last_seen,
             interval_seconds, ram_available_kib, ram_unused_kib, ram_usable_kib,
         ) = row
-        row_at = (request.args.get("at") or "").strip()
+        row_at = _at_param() or ""
         href = url_for("vm_page", node=node, vm_uuid=vm_uuid, bridge=bridge, iface=iface, period=period, **({"at": row_at} if row_at else {}))
         href_e = escape(href, quote=True)
         live = vm_live_status(vm_last_seen)
@@ -17232,7 +17235,7 @@ def interface_table(title, bridge, node, rows, period, q="", sort_by="total", or
             disk_read_bps, disk_write_bps, row_vm_status, last_push, vm_last_seen,
             interval_seconds, ram_available_kib, ram_unused_kib, ram_usable_kib,
         ) = row
-        row_at = (request.args.get("at") or "").strip()
+        row_at = _at_param() or ""
         href = url_for("vm_page", node=node, vm_uuid=vm_uuid, bridge=bridge, iface=iface, period=period, **({"at": row_at} if row_at else {}))
         href_e = escape(href, quote=True)
         live = vm_live_status(vm_last_seen)
@@ -24482,7 +24485,7 @@ def _v48133_disk_sort_link(label, key, period, q, current_sort, current_order, s
         "scope": scope,
         "limit": limit,
     }
-    at = (request.args.get("at") or "").strip()
+    at = _at_param() or ""
     if at:
         params["at"] = at
     return f'<a class="sort-link disk-cap-sort-link" href="{escape(url_for("top_page", **params), quote=True)}">{escape(label)}{arrow}</a>'
@@ -24556,7 +24559,7 @@ def top_vm_table(rows, period, q, sort_by, order, scope, limit):
             ram_available_kib, ram_unused_kib, ram_usable_kib,
             disk_allocated_bytes, disk_assigned_bytes, disk_count,
         ) = row
-        row_at = (request.args.get("at") or "").strip()
+        row_at = _at_param() or ""
         node_href = url_for("node_page", node=node, period=period, q=vm_uuid, **({"at": row_at} if row_at else {}))
         vm_href = url_for("vm_page", node=node, vm_uuid=vm_uuid, period=period, **({"at": row_at} if row_at else {}))
         public_ip = compact_ipv4(public_ipv4)
@@ -26229,7 +26232,7 @@ _storage_io_params_v48137_base = _storage_io_params
 
 def _storage_io_params(**updates):
     values = _storage_io_params_v48137_base(**updates)
-    values["at"] = (request.args.get("at") or "").strip()
+    values["at"] = _at_param() or ""
     if request.args.get("limit") is None and "limit" not in updates:
         values["limit"] = V48137_STORAGE_DEFAULT_ROWS
     values["limit"] = max(10, min(200, safe_int(values.get("limit"), V48137_STORAGE_DEFAULT_ROWS)))
@@ -28246,7 +28249,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.1.0-prod-r1-production-hardening",
+            "version":"50.1.1-prod-r1-stability-fix",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28342,7 +28345,7 @@ def _v48139_current_rows(values):
 # ---------------------------------------------------------------------------
 # v50.1.0 - production hardening, visibility correctness and timezone control
 # ---------------------------------------------------------------------------
-V501_VERSION = "50.1.0-prod-r1-production-hardening"
+V501_VERSION = "50.1.1-prod-r1-stability-fix"
 V501_TIMEZONE_SETTING = "display_timezone"
 _v501_timezone_cache = {"name": None, "checked": 0.0}
 _v501_generation_cache = {"value": 5010001, "checked": 0.0}
@@ -28350,7 +28353,7 @@ _v501_generation_cache = {"value": 5010001, "checked": 0.0}
 
 def _v501_refresh_timezone(force=False):
     """Load the shared display timezone from PostgreSQL for every worker."""
-    global TZ_NAME, TZ, RETENTION_TZ_OFFSET_SECONDS
+    global TZ_NAME, TZ
     now_mono = time.monotonic()
     if not force and _v501_timezone_cache["name"] and now_mono - _v501_timezone_cache["checked"] < 2.0:
         return _v501_timezone_cache["name"]
@@ -28366,7 +28369,6 @@ def _v501_refresh_timezone(force=False):
         name = fallback
     TZ_NAME = name
     TZ = ZoneInfo(name)
-    RETENTION_TZ_OFFSET_SECONDS = 0 if name == "UTC" else 25200
     _v501_timezone_cache.update(name=name, checked=now_mono)
     return name
 
@@ -28409,13 +28411,26 @@ def fmt_chart_label(ts, step):
 
 
 def _parse_datetime_local(value):
+    """Parse a custom snapshot without changing its instant after TZ switches.
+
+    Browser forms submit a timezone-local value. Internal links canonicalize that
+    value to ``@<unix_epoch>`` so changing the display timezone only changes the
+    rendering and never shifts the selected snapshot by seven hours.
+    """
     _v501_refresh_timezone()
     value = (value or "").strip()
     if not value:
         return 0
     try:
-        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M").replace(tzinfo=TZ).timestamp())
-    except (TypeError, ValueError):
+        if value.startswith("@"):
+            return max(0, int(float(value[1:])))
+        if value.isdigit() and len(value) >= 9:
+            return max(0, int(value))
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=TZ)
+        return int(parsed.timestamp())
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -28450,7 +28465,7 @@ def _v490_admin_overview(stats):
         for name, label in DISPLAY_TIMEZONE_CHOICES.items()
     )
     timezone_card = f"""
-    <div class="card"><div class="section-head"><div><h3>Display timezone</h3><p>Change timestamps across Dashboard, Top VM, Abuse, Storage and Admin. Data remains stored in UTC.</p></div></div>
+    <div class="card"><div class="section-head"><div><h3>Display timezone</h3><p>Change timestamps across Dashboard, Top VM, Abuse, Storage and Admin. This is display-only: stored Unix timestamps, retention boundaries and database rows are never rewritten.</p></div></div>
       <form method="post" action="{url_for('admin_display_timezone_v501')}" class="toolbar-form">
         <input type="hidden" name="csrf_token" value="{escape(csrf_token(), quote=True)}">
         <label>Timezone<select name="timezone">{options}</select></label>
@@ -28609,3 +28624,142 @@ try:
     _v501_refresh_timezone(force=True)
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# v50.1.1 - timezone-safe snapshot links and authoritative per-node VM list
+# ---------------------------------------------------------------------------
+V5011_VERSION = "50.1.1-prod-r1-stability-fix"
+
+
+def _v5011_node_vm_inventory_rows(node, q="", limit=5000):
+    """Return every visible VM from the latest accepted node inventory.
+
+    The old Node page rendered only network-interface rows. A valid Agent push
+    can contain VM performance/inventory data even when one interface collector
+    is empty, delayed or reports a non-br0/br1 bridge. The authoritative VM list
+    therefore comes from vm_inventory + vm_current_fast, not vm_iface_current.
+    """
+    limit = max(1, min(5000, safe_int(limit, 5000)))
+    params = [node]
+    search_sql = ""
+    if q:
+        pattern = like_pattern(q)
+        search_sql = """ AND (
+            vi.vm_uuid LIKE ? OR COALESCE(vi.last_iface,'') LIKE ?
+            OR COALESCE(vi.last_bridge,'') LIKE ? OR vi.node LIKE ?
+        )"""
+        params.extend([pattern, pattern, pattern, pattern])
+    params.append(limit)
+    conn = db()
+    try:
+        return conn.execute(f"""
+            SELECT
+                vi.vm_uuid,
+                COALESCE(NULLIF(vi.last_iface,''), '-') AS iface,
+                COALESCE(NULLIF(vi.last_bridge,''), '-') AS bridge,
+                COALESCE(vi.status,'active') AS vm_status,
+                MAX(COALESCE(vi.last_seen,0), COALESCE(c.last_seen,0)) AS last_seen,
+                COALESCE(c.iface_count,0) AS iface_count,
+                COALESCE(c.cpu_full_percent,0) AS cpu_full_percent,
+                COALESCE(c.cpu_core_percent,0) AS cpu_core_percent,
+                COALESCE(c.vcpu_current,0) AS vcpu_current,
+                COALESCE(c.ram_current_kib,0) AS ram_current_kib,
+                COALESCE(c.ram_rss_kib,0) AS ram_rss_kib,
+                COALESCE(c.ram_available_kib,0) AS ram_available_kib,
+                COALESCE(c.total_mbps,0) AS total_mbps,
+                COALESCE(c.total_pps,0) AS total_pps,
+                COALESCE(c.disk_read_bps,0) AS disk_read_bps,
+                COALESCE(c.disk_write_bps,0) AS disk_write_bps
+            FROM vm_inventory vi
+            LEFT JOIN vm_current_fast c
+              ON c.node=vi.node AND c.vm_uuid=vi.vm_uuid
+            WHERE vi.node=?
+              AND COALESCE(vi.status,'active')!='hidden'
+              AND vi.deleted_at IS NULL
+              {search_sql}
+            ORDER BY last_seen DESC, vi.vm_uuid COLLATE NOCASE
+            LIMIT ?
+        """, params).fetchall()
+    finally:
+        conn.close()
+
+
+def _v5011_node_vm_inventory_table(node, q=""):
+    rows = _v5011_node_vm_inventory_rows(node, q=q)
+    body = ""
+    for row in rows:
+        (
+            vm_uuid, iface, bridge, vm_status, last_seen, iface_count,
+            cpu_full, cpu_core, vcpu, ram_current, ram_rss, ram_available,
+            total_mbps, total_pps, disk_read, disk_write,
+        ) = row
+        href = url_for(
+            "vm_page", node=node, vm_uuid=vm_uuid,
+            bridge=bridge or "-", iface=iface or "-", period="5m",
+        )
+        live = vm_live_status(last_seen)
+        state_html = vm_status_badge(vm_status, live)
+        ram_html = fmt_vm_ram_block(
+            ram_current, ram_rss, ram_available, 0, 0, compact=True,
+        )
+        body += f"""
+        <tr class="clickable" onclick="if (!event.target.closest('a,button')) window.location='{escape(href,quote=True)}'">
+          <td>{state_html}</td>
+          <td class="mono"><span class="uuid-cell"><a href="{escape(href,quote=True)}"><b>{escape(vm_uuid)}</b></a><button type="button" class="copy-btn" data-copy="{escape(vm_uuid)}" title="Copy UUID">⧉</button></span></td>
+          <td class="mono">{escape(bridge or '-')} / {escape(iface or '-')}</td>
+          <td class="num">{int(iface_count or 0)}</td>
+          <td class="num"><b>{float(cpu_core or 0):.1f}%</b><small class="metric-subline">{float(cpu_full or 0):.1f}% full · {int(vcpu or 0)} vCPU</small></td>
+          <td class="num ram-cell">{ram_html}</td>
+          <td class="num"><b>{float(total_mbps or 0):.2f}</b><small class="metric-subline">{fmt_pps_value(total_pps)} PPS</small></td>
+          <td class="num">{human_rate(disk_read)}<small class="metric-subline">R</small></td>
+          <td class="num">{human_rate(disk_write)}<small class="metric-subline">W</small></td>
+          <td class="num">{fmt_push(last_seen)}</td>
+        </tr>"""
+    if not body:
+        body = '<tr><td colspan="10" class="empty">No visible VM inventory has been accepted from this node yet. Check the latest Agent push payload and Agent Health.</td></tr>'
+    return f"""
+    <div class="card vm-table-card node-vm-inventory-v5011">
+      <div class="table-title-row">
+        <div><h3>Current VMs on Node</h3><div class="table-hint">Authoritative latest VM inventory. This list does not depend on br0/br1 interface rows.</div></div>
+        <div class="count-badges"><span>Visible VMs <b>{len(rows)}</b></span><span>Source <b>latest push</b></span></div>
+      </div>
+      <div class="table-wrap"><table class="node-vm-inventory-table">
+        <thead><tr><th>STATE</th><th>VM UUID</th><th>BRIDGE / IFACE</th><th>IFACES</th><th>CPU</th><th>RAM</th><th>NETWORK</th><th>DISK R/s</th><th>DISK W/s</th><th>LAST</th></tr></thead>
+        <tbody>{body}</tbody>
+      </table></div>
+    </div>"""
+
+
+_v5011_node_page_base = app.view_functions.get("node_page")
+
+
+def node_page_v5011(node):
+    response = _v5011_node_page_base(node)
+    if not isinstance(response, Response) or response.status_code >= 400:
+        return response
+    html = response.get_data(as_text=True)
+    marker = '<div class="node-chart-section">'
+    table = _v5011_node_vm_inventory_table(node, q=(request.args.get("q") or "").strip())
+    if marker in html:
+        html = html.replace(marker, table + marker, 1)
+    else:
+        html = html.replace('</main>', table + '</main>', 1)
+    response.set_data(html)
+    return response
+
+
+app.view_functions["node_page"] = node_page_v5011
+
+V5011_UI_CSS = r'''
+<style id="v5011-stability-fix">
+.node-vm-inventory-table{width:100%;min-width:1180px}
+.node-vm-inventory-table th,.node-vm-inventory-table td{padding:8px 9px;vertical-align:middle}
+.node-vm-inventory-v5011 .table-wrap{overflow:auto}
+@media(max-width:760px){.node-vm-inventory-table{min-width:980px}}
+</style>
+'''
+_page_v5011_base = page
+
+
+def page(title, content):
+    return _page_v5011_base(title, V5011_UI_CSS + content)

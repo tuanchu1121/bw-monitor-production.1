@@ -65,7 +65,7 @@ bw-monitorctl timezone set UTC
 bw-monitorctl timezone set Asia/Ho_Chi_Minh
 ```
 
-The same setting is available in **Admin → Overview → Display timezone**. Metric timestamps remain Unix/UTC values in PostgreSQL; only rendering and hourly retention alignment change.
+The same setting is available in **Admin → Overview → Display timezone**. Metric timestamps remain Unix/UTC values in PostgreSQL. This setting changes rendering only; retention and storage bucket boundaries do not change.
 
 ## Web liveness
 

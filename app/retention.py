@@ -71,7 +71,7 @@ def main() -> int:
         result = module.run_retention(dry_run=False)
         print(json.dumps({
             "ok": True,
-            "version": "50.1.0-prod-r1-production-hardening",
+            "version": "50.1.1-prod-r1-stability-fix",
             "started_at": started,
             "finished_at": int(time.time()),
             "result": result,

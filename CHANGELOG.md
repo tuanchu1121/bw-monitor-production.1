@@ -1,5 +1,12 @@
 # Changelog
 
+## 50.1.1-prod-r1-stability-fix
+
+- Make display timezone a presentation-only setting; it no longer changes retention or storage bucket boundaries.
+- Preserve custom snapshot instants as Unix epochs across UTC/Asia/Ho_Chi_Minh switches.
+- Add an authoritative Current VMs on Node table sourced from the latest VM inventory/current metrics, independent of br0/br1 interface collection.
+- Keep hidden/deleted VMs out of the new Node VM inventory.
+
 ## 50.1.0-prod-r1-production-hardening
 
 - Added `/livez` and `/healthz`, a 30-second local liveness watchdog, faster systemd recovery, Gunicorn worker temp files in `/dev/shm`, and hardened Nginx upstream handling to reduce intermittent Bad Gateway windows.
