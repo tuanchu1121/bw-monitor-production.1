@@ -1789,7 +1789,7 @@ def resolve_snapshot_bucket(conn, period, node=None):
         latest = int((latest_row or [0])[0] or 0)
         if latest <= 0:
             return 0, 0
-        target = latest - max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)
+        target = latest - period_seconds(period)
         row = conn.execute(
             f"SELECT MAX(bucket) FROM ({union_sql}) WHERE bucket<=?", bind + [target]
         ).fetchone()
@@ -1799,7 +1799,7 @@ def resolve_snapshot_bucket(conn, period, node=None):
             selected = int((row or [0])[0] or 0)
         return selected, latest
 
-    target = latest - max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)
+    target = latest - period_seconds(period)
     if node:
         row = conn.execute(
             "SELECT MAX(bucket) FROM node_push_snapshots WHERE node=? AND bucket<=?",
@@ -2705,7 +2705,7 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
     sort_by = clean_node_sort(sort_by)
     order = clean_sort_order(order)
     now = now_ts()
-    requested = int(target_ts) if target_ts is not None else now - max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)
+    requested = int(target_ts) if target_ts is not None else now - period_seconds(period)
     requested = max(now - HOURLY_RETENTION_DAYS * 86400, min(now, requested))
     offset = max(0, now - requested)
     visible_after = now - NODE_AUTO_DELETE_SECONDS
@@ -7642,7 +7642,7 @@ def top_page():
                 <div class="value">{fmt_full(start)}</div>
             </div>
         </div>
-        <div class="label period-label">Snapshot lookback</div>
+        <div class="label period-label">Snapshot age</div>
         <div class="periods">{top_period_links(period, q=q, sort_by=sort_by, order=sort_order, scope=scope, limit=limit)}</div>
         <div class="label period-label">Scope</div>
         <div class="scope-links">{top_scope_links(period, q, sort_by, sort_order, scope, limit)}</div>
@@ -14034,7 +14034,7 @@ def top_page_v484():
     rows,start,end,limit=get_top_vm_rows(period,q=q,sort_by=sort_by,order=sort_order,scope=scope,limit=limit); at=_request_target_ts()
     content=f"""
     <div class="card top-card"><div class="top-grid"><div><div class="label">Latest Available</div><div class="value">{fmt_full(end)}</div></div><div><div class="label">Timezone</div><div class="value">{TZ_NAME}</div></div><div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div></div>
-    <div class="label period-label">Snapshot lookback</div><div class="periods">{top_period_links(period,q=q,sort_by=sort_by,order=sort_order,scope=scope,limit=limit)}</div><div class="label period-label">Scope</div><div class="scope-links">{top_scope_links(period,q,sort_by,sort_order,scope,limit)}</div>
+    <div class="label period-label">Snapshot age</div><div class="periods">{top_period_links(period,q=q,sort_by=sort_by,order=sort_order,scope=scope,limit=limit)}</div><div class="label period-label">Scope</div><div class="scope-links">{top_scope_links(period,q,sort_by,sort_order,scope,limit)}</div>
     <form class="search" method="get" action="{url_for('top_page')}"><input type="hidden" name="period" value="{escape(period)}"><input type="hidden" name="sort" value="{escape(sort_by)}"><input type="hidden" name="order" value="{escape(sort_order)}"><input type="hidden" name="scope" value="{escape(scope)}">{f'<input type="hidden" name="at" value="{escape(_datetime_local_value(at),quote=True)}">' if at else ''}<input name="q" value="{escape(q)}" placeholder="Search node / IPv4 / VM UUID / interface"><select name="limit" aria-label="Row limit"><option value="100" {'selected' if limit==100 else ''}>100 rows</option><option value="200" {'selected' if limit==200 else ''}>200 rows</option><option value="500" {'selected' if limit==500 else ''}>500 rows</option><option value="1000" {'selected' if limit==1000 else ''}>1000 rows</option></select><button type="submit">Search</button></form></div>
     {_custom_snapshot_control('top_page',at,period=period,q=q or None,sort=sort_by,order=sort_order,scope=scope,limit=limit)}
     {top_vm_table(rows,period,q,sort_by,sort_order,scope,limit)}"""
@@ -26739,7 +26739,7 @@ def storage_io_page_v48138():
         <div><div class="label">Timezone</div><div class="value">{escape(TZ_NAME)}</div></div>
         <div><div class="label">Selected Snapshot</div><div class="value">{escape(selected_text)}</div></div>
       </div>
-      <div class="table-title-row"><div><div class="label period-label">Snapshot lookback</div></div><div class="storage-toolbar-state"><span class="{history_class}">{history_label}</span></div></div>
+      <div class="table-title-row"><div><div class="label period-label">Snapshot age</div></div><div class="storage-toolbar-state"><span class="{history_class}">{history_label}</span></div></div>
       <div class="periods storage-periods">{_storage_period_links(values)}</div>
       <form class="search" method="get" action="{url_for('storage_io_page')}">
         <input type="hidden" name="view" value="{escape(values['view'],quote=True)}"><input type="hidden" name="period" value="{escape(values['period'],quote=True)}"><input type="hidden" name="sort" value="{escape(values['sort'],quote=True)}"><input type="hidden" name="order" value="{escape(values['order'],quote=True)}">{hidden_at}
@@ -28249,7 +28249,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.1.1-prod-r1-stability-fix",
+            "version":"50.1.2-prod-r1-snapshot-time-fix",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28345,7 +28345,7 @@ def _v48139_current_rows(values):
 # ---------------------------------------------------------------------------
 # v50.1.0 - production hardening, visibility correctness and timezone control
 # ---------------------------------------------------------------------------
-V501_VERSION = "50.1.1-prod-r1-stability-fix"
+V501_VERSION = "50.1.2-prod-r1-snapshot-time-fix"
 V501_TIMEZONE_SETTING = "display_timezone"
 _v501_timezone_cache = {"name": None, "checked": 0.0}
 _v501_generation_cache = {"value": 5010001, "checked": 0.0}
@@ -28628,7 +28628,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # v50.1.1 - timezone-safe snapshot links and authoritative per-node VM list
 # ---------------------------------------------------------------------------
-V5011_VERSION = "50.1.1-prod-r1-stability-fix"
+V5011_VERSION = "50.1.2-prod-r1-snapshot-time-fix"
 
 
 def _v5011_node_vm_inventory_rows(node, q="", limit=5000):

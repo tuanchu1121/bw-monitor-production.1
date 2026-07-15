@@ -13,7 +13,7 @@ def need(condition, message):
     if not condition:
         raise AssertionError(message)
 
-need("V501_VERSION = \"50.1.1-prod-r1-stability-fix\"" in app, "v50.1.1 marker missing")
+need("V501_VERSION = \"50.1.2-prod-r1-snapshot-time-fix\"" in app, "v50.1.2 marker missing")
 need('@app.route("/livez")' in app and '@app.route("/healthz")' in app, "health endpoints missing")
 need("bw-monitor-health-watch.timer" in installer, "health watchdog is not installed")
 need("StartLimitIntervalSec=0" in service and "Restart=always" in service, "systemd recovery hardening missing")
@@ -39,3 +39,11 @@ need('if value.startswith("@")' in app and 'return f"@{timestamp}"' in app, "abs
 need("Current VMs on Node" in app and "_v5011_node_vm_inventory_rows" in app, "authoritative per-node VM inventory missing")
 need("This list does not depend on br0/br1 interface rows" in app, "node VM list independence marker missing")
 print("PASS: v50.1.1 timezone and node inventory stability contract")
+
+
+# v50.1.2 snapshot selection invariants.
+need("period_seconds(period) - CACHE_BUCKET_SECONDS" not in app, "snapshot age is still one 5-minute bucket too new")
+need(app.count("target = latest - period_seconds(period)") >= 2, "Dashboard/Top VM snapshot resolver does not use the full requested age")
+need("requested = int(target_ts) if target_ts is not None else now - period_seconds(period)" in app, "Dashboard requested point does not use the full requested age")
+need('target = latest - period_seconds(clean_period(values.get("period") or "5m"))' in app, "Storage snapshot age diverges from Dashboard/Top VM")
+print("PASS: v50.1.2 exact snapshot-age contract")

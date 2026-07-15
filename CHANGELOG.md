@@ -1,5 +1,12 @@
 # Changelog
 
+## 50.1.2-prod-r1-snapshot-time-fix
+
+- Fix Dashboard and Top VM lookback selectors being one 5-minute bucket too new.
+- Make 10m, 15m, 30m, 1h and longer selectors use the full requested age, matching Storage I/O.
+- Keep custom `at=` selection as the nearest retained real push at or before the requested instant.
+- Keep timezone changes display-only and preserve canonical Unix timestamps in links.
+
 ## 50.1.1-prod-r1-stability-fix
 
 - Make display timezone a presentation-only setting; it no longer changes retention or storage bucket boundaries.
