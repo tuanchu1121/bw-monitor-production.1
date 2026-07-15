@@ -9,7 +9,7 @@ def need(cond: bool, message: str) -> None:
         raise AssertionError(message)
 
 version = (ROOT / "VERSION").read_text().strip()
-need(version == "50.2.2-prod-r1-original-time-restore", f"unexpected VERSION: {version}")
+need(version == "50.2.3-prod-r1-dashboard-snapshot-fix", f"unexpected VERSION: {version}")
 
 app = (ROOT / "app/app.py").read_text()
 pg = (ROOT / "app/bw_pg.py").read_text()
@@ -95,6 +95,9 @@ need("VirtInfra Monitor" in app, "public product identity missing")
 need('TZ_NAME = "Asia/Ho_Chi_Minh"' in app, "fixed Ho Chi Minh timezone missing")
 need('DISPLAY_TIMEZONES' not in app and '@app.route("/admin/display-timezone"' not in app, "runtime timezone switch still present")
 need('period_seconds(period) - CACHE_BUCKET_SECONDS' in app, "original 5m-slot snapshot selector missing")
+need('offset = max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)' in app, "Dashboard does not use original snapshot-slot semantics")
+need('selected_display = max(selected_buckets) if selected_buckets else requested' in app, "Dashboard Selected Snapshot does not show the retained bucket actually used")
+need('<div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div>' in app, "Dashboard Selected Snapshot label missing")
 need('period_seconds(clean_period(values.get("period") or "5m")) - CACHE_BUCKET_SECONDS' in app, "Storage does not use original slot semantics")
 need('@app.route("/livez")' in app and '@app.route("/healthz")' in app, "health endpoints missing")
 need("pg_advisory_xact_lock" in app, "per-node PostgreSQL push lock missing")

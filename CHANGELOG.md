@@ -1,3 +1,10 @@
+## 50.2.3-prod-r1-dashboard-snapshot-fix
+
+- Fixed Dashboard period-slot selection so `5m` is the latest retained snapshot, `10m` is the previous 5-minute snapshot, `15m` is the third snapshot, and later buttons continue in the same sequence.
+- Changed Dashboard `Selected Snapshot` to show the retained bucket actually used by the query instead of a theoretical wall-clock request point.
+- Kept custom date/time selection absolute and continued selecting the nearest retained real push at or before the chosen time.
+- Added regression checks for Dashboard slot semantics and Selected Snapshot rendering.
+
 ## 50.2.2-prod-r1-original-time-restore
 
 - Removed the runtime UTC/HCM timezone switch and restored the original fixed `Asia/Ho_Chi_Minh` display.

@@ -8,7 +8,7 @@ for f in "$ROOT/install.sh" "$ROOT/update.sh" "$I" "$ROOT/deploy/postgres/bw-mon
   bash -n "$f"
 done
 
-grep -q 'RELEASE="50.2.2-prod-r1-original-time-restore"' "$I" || fail "release marker missing"
+grep -q 'RELEASE="50.2.3-prod-r1-dashboard-snapshot-fix"' "$I" || fail "release marker missing"
 grep -q 'tuanchu1121/bw-monitor-production.1' "$ROOT/install.sh" || fail "default GitHub repository is wrong"
 grep -q 'deploy/postgres/install-postgres-native.sh' "$ROOT/install.sh" || fail "bootstrap does not launch PostgreSQL-native installer"
 grep -q 'repo_complete()' "$ROOT/install.sh" || fail "bootstrap repository validation missing"

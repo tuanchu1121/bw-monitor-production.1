@@ -2668,10 +2668,10 @@ def range_card(period, start, end, q="", endpoint="index", node=None, vm_status=
         time_cells = f"""
             <div><div class="label">Live Updated</div><div class="value">{fmt_full(end)}</div></div>
             <div><div class="label">Timezone</div><div class="value">{display_timezone_name()}</div></div>
-            <div><div class="label">Requested Point</div><div class="value">{fmt_full(start)}</div></div>
+            <div><div class="label">Selected Snapshot</div><div class="value">{fmt_full(start)}</div></div>
         """
         period_title = "Snapshot lookback"
-        note = "Each node uses its own nearest retained real push. No CPU/RAM averaging and no multi-push traffic sum."
+        note = "Selected Snapshot is the retained push actually used. Each node still uses its own nearest real push, shown exactly in the SNAPSHOT column; no CPU/RAM averaging and no multi-push traffic sum."
 
     return f"""
     <div class="card top-card">
@@ -2700,9 +2700,17 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
     sort_by = clean_node_sort(sort_by)
     order = clean_sort_order(order)
     now = now_ts()
-    requested = int(target_ts) if target_ts is not None else now - max(0, period_seconds(period))
-    requested = max(now - HOURLY_RETENTION_DAYS * 86400, min(now, requested))
-    offset = max(0, now - requested)
+    if target_ts is not None:
+        # An explicitly selected date/time is an absolute requested point.
+        requested = int(target_ts)
+        requested = max(now - HOURLY_RETENTION_DAYS * 86400, min(now, requested))
+        offset = max(0, now - requested)
+    else:
+        # Dashboard period buttons are snapshot slots, not elapsed ranges:
+        # 5m = latest retained push, 10m = previous push, 15m = third push.
+        # Keep this identical to resolve_snapshot_bucket() and Storage I/O.
+        offset = max(0, period_seconds(period) - CACHE_BUCKET_SECONDS)
+        requested = max(now - HOURLY_RETENTION_DAYS * 86400, now - offset)
     visible_after = now - NODE_AUTO_DELETE_SECONDS
     q = (q or "").strip()
     like = like_pattern(q) if q else ""
@@ -3019,7 +3027,14 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
         rows = conn.execute(sql, [visible_after] + search_params + [selection_limit, selection_limit, offset]).fetchall()
     finally:
         conn.close()
-    return rows, requested, now
+
+    # Display the real retained bucket selected by the query, not the wall-clock
+    # target. This mirrors the VM Abuse timeline, where the UI shows the actual
+    # sample/event timestamp that backs the displayed metrics. Nodes can be a
+    # few seconds apart, so the per-node SNAPSHOT column remains authoritative.
+    selected_buckets = [safe_int(row[2], 0) for row in rows if safe_int(row[2], 0) > 0]
+    selected_display = max(selected_buckets) if selected_buckets else requested
+    return rows, selected_display, now
 
 
 
@@ -28264,7 +28279,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.2.2-prod-r1-original-time-restore",
+            "version":"50.2.3-prod-r1-dashboard-snapshot-fix",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28359,7 +28374,7 @@ def _v48139_current_rows(values):
 
 
 # ---------------------------------------------------------------------------
-# VirtInfra Monitor v50.2.2 original time behavior restore
+# VirtInfra Monitor v50.2.3 Dashboard Selected Snapshot fix
 # ---------------------------------------------------------------------------
 # Time display is intentionally fixed to the original Asia/Ho_Chi_Minh zone.
 # There is no runtime timezone switch. Stored timestamps remain Unix/UTC values;
