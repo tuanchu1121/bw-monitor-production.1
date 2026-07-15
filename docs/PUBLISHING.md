@@ -1,5 +1,10 @@
 # Publish to GitHub
 
+> Vietnamese step-by-step GitHub Desktop guide: [`../GITHUB_DESKTOP_VI.md`](../GITHUB_DESKTOP_VI.md)
+>
+> Complete deployment and operations commands: [`../COMMANDS_A_TO_Z_VI.md`](../COMMANDS_A_TO_Z_VI.md)
+
+
 The root of the repository must contain `install.sh`, `app/`, `postgres/`, `deploy/`, `ansible/`, `tests/` and `docs/`.
 
 ## Windows + GitHub Desktop
@@ -12,13 +17,13 @@ Assume:
 
 ```text
 checkout: /.data/agent
-archive:  /root/bw-monitor-50.3.1-prod-r1-consumption-route-fix-github-production.zip
+archive:  /root/bw-monitor-50.3.2-prod-r1-github-desktop-operations-guide-github-production.zip
 ```
 
 ```bash
 set -euo pipefail
 
-ZIP=/root/bw-monitor-50.3.1-prod-r1-consumption-route-fix-github-production.zip
+ZIP=/root/bw-monitor-50.3.2-prod-r1-github-desktop-operations-guide-github-production.zip
 REPO=/.data/agent
 TMP=/tmp/bw-monitor-v50-publish
 
@@ -59,7 +64,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Expected:
 
 ```text
-50.3.1-prod-r1-consumption-route-fix
+50.3.2-prod-r1-github-desktop-operations-guide
 ```
 
 ## Secret review

@@ -26,7 +26,7 @@ fail(){ echo "ERROR: $*" >&2; exit 1; }
 cd "$ROOT"
 
 log "Validate release identity"
-[[ "$(cat VERSION)" == "50.3.1-prod-r1-consumption-route-fix" ]] || fail "VERSION mismatch"
+[[ "$(cat VERSION)" == "50.3.2-prod-r1-github-desktop-operations-guide" ]] || fail "VERSION mismatch"
 [[ -f app/app.py && -f app/bw_pg.py && -f deploy/agent/agent.py ]] || fail "full source tree is incomplete"
 [[ ! -d release && ! -d enterprise ]] || fail "legacy duplicate runtime trees must not be shipped"
 

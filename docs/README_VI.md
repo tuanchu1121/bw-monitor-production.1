@@ -1,5 +1,12 @@
 # Hướng dẫn đầy đủ VirtInfra Monitor v50
 
+> Bộ hướng dẫn production mới:
+>
+> - [`../START_HERE_VI.md`](../START_HERE_VI.md)
+> - [`../GITHUB_DESKTOP_VI.md`](../GITHUB_DESKTOP_VI.md)
+> - [`../COMMANDS_A_TO_Z_VI.md`](../COMMANDS_A_TO_Z_VI.md)
+
+
 VirtInfra Monitor v50 giữ nguyên toàn bộ giao diện và chức năng của code production cũ, nhưng runtime chỉ dùng **một PostgreSQL 17 + TimescaleDB database**. Không có database thứ hai để đồng bộ, không có dữ liệu chính trong Redis, không cần migrate dữ liệu cũ khi cài server mới.
 
 ## 1. Luồng thật của Agent

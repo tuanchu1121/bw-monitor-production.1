@@ -2,7 +2,7 @@
 
 Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-> Release: `50.3.1-prod-r1-consumption-route-fix`
+> Release: `50.3.2-prod-r1-github-desktop-operations-guide`
 
 > **Canonical-source bootstrap:** the installer verifies `SHA256SUMS` and stages only files in the release manifest. Old v48/v49 folders accidentally left in a GitHub Desktop repository are ignored during installation.
 
@@ -250,6 +250,12 @@ Release audit and archives:
 ./tools/release-audit.sh
 ./tools/build-dist.sh
 ```
+
+## Vietnamese production runbooks
+
+- [Start here - end-to-end deployment](START_HERE_VI.md)
+- [GitHub Desktop publishing guide](GITHUB_DESKTOP_VI.md)
+- [All deployment and maintenance commands A-Z](COMMANDS_A_TO_Z_VI.md)
 
 ## Documentation
 

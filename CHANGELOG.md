@@ -1,3 +1,11 @@
+## 50.3.2-prod-r1-github-desktop-operations-guide
+
+- Kept the complete `50.3.1` Consumption route fix and runtime behavior unchanged.
+- Added `START_HERE_VI.md` as the production operator entry point.
+- Added a detailed GitHub Desktop publish guide covering root-tree replacement, commit, push, raw-version verification, conflicts and source rollback.
+- Added a complete Vietnamese command handbook for Monitor install/update, Agent manual/Ansible deployment, maintenance, Consumption checks, PostgreSQL, backup/restore, domain/TLS, diagnostics and troubleshooting.
+- Documented safe token handling, bridge-role verification, Agent state behavior and production rollback boundaries.
+
 ## 50.3.1-prod-r1-consumption-route-fix
 
 - Renamed the visible navigation/page label from `Bandwidth Consumption` to `Consumption`.
@@ -5,7 +13,7 @@
 - Kept the existing route, endpoint, table, Agent payload and retention schema unchanged for safe in-place upgrades.
 - Added a route-render regression contract so this formatting failure cannot silently return.
 
-## 50.3.1-prod-r1-consumption-route-fix
+## 50.2.3-prod-r1-dashboard-snapshot-fix
 
 - Fixed Dashboard period-slot selection so `5m` is the latest retained snapshot, `10m` is the previous 5-minute snapshot, `15m` is the third snapshot, and later buttons continue in the same sequence.
 - Changed Dashboard `Selected Snapshot` to show the retained bucket actually used by the query instead of a theoretical wall-clock request point.
