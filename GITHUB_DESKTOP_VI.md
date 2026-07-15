@@ -1,6 +1,10 @@
 # Đưa VirtInfra Monitor lên GitHub bằng GitHub Desktop
 
-> Dùng cho release `50.3.2-prod-r1-github-desktop-operations-guide`.
+> Dùng cho release `50.3.3-prod-r1-postgres-native-operations-guide`.
+
+> Source of truth vận hành: [`SOURCE_OF_TRUTH_VI.md`](SOURCE_OF_TRUTH_VI.md).
+>
+> Release này dùng PostgreSQL 17 + TimescaleDB làm nguồn dữ liệu duy nhất. GitHub chỉ chứa source và manifest, không chứa data volume, env production hoặc database dump.
 
 Mục tiêu là đưa **toàn bộ source ở root release** lên đúng root repo:
 
@@ -72,7 +76,7 @@ update.sh
 Giải nén file ZIP release ra một thư mục riêng, ví dụ:
 
 ```text
-D:\Downloads\virtinfra-monitor-50.3.2-prod-r1-github-desktop-operations-guide\
+D:\Downloads\virtinfra-monitor-50.3.3-prod-r1-postgres-native-operations-guide\
 ```
 
 Mở thư mục đó. Bên trong phải thấy trực tiếp:
@@ -208,7 +212,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Phải trả về:
 
 ```text
-50.3.2-prod-r1-github-desktop-operations-guide
+50.3.3-prod-r1-postgres-native-operations-guide
 ```
 
 Kiểm tra file installer:
@@ -244,7 +248,7 @@ virtinfra-monitorctl version
 Phải ra:
 
 ```text
-50.3.2-prod-r1-github-desktop-operations-guide
+50.3.3-prod-r1-postgres-native-operations-guide
 ```
 
 Kiểm tra:
@@ -286,7 +290,7 @@ Sai:
 
 ```text
 repo-root/
-└── virtinfra-monitor-50.3.2-prod-r1-github-desktop-operations-guide/
+└── virtinfra-monitor-50.3.3-prod-r1-postgres-native-operations-guide/
     ├── app/
     ├── deploy/
     └── install.sh

@@ -1,4 +1,4 @@
-## 50.3.2-prod-r1-github-desktop-operations-guide
+## 50.3.3-prod-r1-postgres-native-operations-guide
 
 - Kept the complete `50.3.1` Consumption route fix and runtime behavior unchanged.
 - Added `START_HERE_VI.md` as the production operator entry point.
@@ -32,7 +32,7 @@
 ## 50.2.2-prod-r1-original-time-restore
 
 - Add the session CSRF token to the Display Timezone form.
-- Fix the PostgreSQL Top VM historical-period query by replacing the SQLite-only `HAVING total` alias with the full aggregate expression.
+- Fix the PostgreSQL Top VM historical-period query by replacing the non-PostgreSQL `HAVING total` alias with the full aggregate expression.
 - Extend live PostgreSQL regression coverage to Top VM 10m/30m/1h and the timezone POST workflow.
 
 ## 50.2.0-prod-r1-virtinfra-hardening
@@ -43,7 +43,7 @@
 - Canonicalized custom snapshot URLs to absolute Unix timestamps across timezone switches.
 - Fixed hidden Node/VM leakage through Dashboard and Storage search paths.
 - Added PostgreSQL-backed cross-worker page-cache invalidation for Hide/Restore.
-- Corrected database sizing UI: PostgreSQL data is separate from reusable WAL reserve; removed SQLite SHM wording.
+- Corrected database sizing UI: PostgreSQL data is separate from reusable WAL reserve; removed obsolete local-database size wording.
 - Made Current Abuse fit normal desktop widths.
 - Added /livez, /healthz, a local systemd watchdog, Nginx upstream hardening and Gunicorn /dev/shm heartbeats.
 - Serialized same-node ingestion and performance-summary bootstrap with PostgreSQL advisory locks.

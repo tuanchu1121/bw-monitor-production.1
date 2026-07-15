@@ -26,7 +26,7 @@ fail(){ echo "ERROR: $*" >&2; exit 1; }
 cd "$ROOT"
 
 log "Validate release identity"
-[[ "$(cat VERSION)" == "50.3.2-prod-r1-github-desktop-operations-guide" ]] || fail "VERSION mismatch"
+[[ "$(cat VERSION)" == "50.3.3-prod-r1-postgres-native-operations-guide" ]] || fail "VERSION mismatch"
 [[ -f app/app.py && -f app/bw_pg.py && -f deploy/agent/agent.py ]] || fail "full source tree is incomplete"
 [[ ! -d release && ! -d enterprise ]] || fail "legacy duplicate runtime trees must not be shipped"
 
@@ -77,6 +77,9 @@ PY
 
 log "Run v50 source contract"
 "$PYTHON" tests/test_v50_contract.py
+
+log "Validate source-accurate operations documentation"
+"$PYTHON" tests/test_docs_source_accuracy.py
 
 log "Run compact Bandwidth Consumption Agent regression"
 "$PYTHON" tests/test_bandwidth_consumption_agent.py

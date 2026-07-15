@@ -1,8 +1,23 @@
 # BẮT ĐẦU TẠI ĐÂY - VirtInfra Monitor
 
-> Release: `50.3.2-prod-r1-github-desktop-operations-guide`
+> Release: `50.3.3-prod-r1-postgres-native-operations-guide`
 >
 > Bản này giữ nguyên toàn bộ code và bản sửa `Consumption` của `50.3.1`, đồng thời bổ sung bộ tài liệu triển khai, update, Agent và bảo trì đầy đủ từ A đến Z.
+
+## Database contract của bản này
+
+```text
+PostgreSQL 17 + TimescaleDB là nguồn dữ liệu duy nhất
+Container: bw-timescaledb
+Volume: bw_monitor_postgres_data
+Loopback: 127.0.0.1:55432
+Backup: pg_dump custom format
+Restore: pg_restore
+```
+
+Không có command vận hành theo database file cục bộ.
+
+Đọc [`SOURCE_OF_TRUTH_VI.md`](SOURCE_OF_TRUTH_VI.md) trước khi sửa kiến trúc, path hoặc command.
 
 Đây là đường đi chuẩn cho production:
 
@@ -24,19 +39,22 @@ Kiểm tra service, log, DB, Consumption và retention
 
 ## 1. Tài liệu nên mở theo thứ tự
 
-1. [`GITHUB_DESKTOP_VI.md`](GITHUB_DESKTOP_VI.md)
+1. [`SOURCE_OF_TRUTH_VI.md`](SOURCE_OF_TRUTH_VI.md)
+   - Kiến trúc, service, timer, path, PostgreSQL/TimescaleDB, Agent và Consumption đúng theo source.
+
+2. [`GITHUB_DESKTOP_VI.md`](GITHUB_DESKTOP_VI.md)
    - Cách đưa bản ZIP này lên repo bằng GitHub Desktop.
    - Cách copy đúng root repo, không làm mất `.git`.
    - Cách Commit, Push và kiểm tra GitHub đã nhận đúng bản.
 
-2. [`COMMANDS_A_TO_Z_VI.md`](COMMANDS_A_TO_Z_VI.md)
+3. [`COMMANDS_A_TO_Z_VI.md`](COMMANDS_A_TO_Z_VI.md)
    - Cài Monitor mới bằng IP hoặc domain HTTPS.
    - Update/fix Monitor đang chạy.
    - Cài, update, kiểm tra và gỡ Agent thủ công.
    - Deploy/update Agent hàng loạt bằng Ansible.
    - Toàn bộ command bảo trì, backup, restore, DB, retention, log và troubleshooting.
 
-3. [`README.md`](README.md)
+4. [`README.md`](README.md)
    - Kiến trúc và chức năng của sản phẩm.
 
 ## 2. Luồng nhanh nhất để triển khai bản này
@@ -88,7 +106,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Kết quả phải là:
 
 ```text
-50.3.2-prod-r1-github-desktop-operations-guide
+50.3.3-prod-r1-postgres-native-operations-guide
 ```
 
 ### Bước B - Update Monitor đang chạy
@@ -106,7 +124,7 @@ virtinfra-monitorctl version
 Kết quả version phải là:
 
 ```text
-50.3.2-prod-r1-github-desktop-operations-guide
+50.3.3-prod-r1-postgres-native-operations-guide
 ```
 
 Kiểm tra thêm:

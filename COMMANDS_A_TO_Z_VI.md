@@ -1,10 +1,26 @@
 # VirtInfra Monitor - Toàn bộ command triển khai và bảo trì từ A đến Z
 
-> Release: `50.3.2-prod-r1-github-desktop-operations-guide`
+> Release: `50.3.3-prod-r1-postgres-native-operations-guide`
 >
 > Chạy command Monitor bằng `root`. Với node KVM, chạy Agent bằng `root` để Agent đọc được libvirt, interface, disk và host metrics.
 
 ---
+
+# DATABASE CONTRACT CỦA SOURCE HIỆN TẠI
+
+```text
+PostgreSQL 17 + TimescaleDB
+Container: bw-timescaledb
+Database: bw_monitor
+Volume: bw_monitor_postgres_data
+Host bind: 127.0.0.1:55432
+Backup: pg_dump custom format
+Restore: pg_restore
+```
+
+Không có database file cục bộ để backup, compact hoặc restore. Toàn bộ command database trong guide này đi qua PostgreSQL/TimescaleDB.
+
+Xem kiến trúc đầy đủ tại [`SOURCE_OF_TRUTH_VI.md`](SOURCE_OF_TRUTH_VI.md).
 
 # MỤC LỤC
 
@@ -89,7 +105,7 @@ https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/VERSI
 Kết quả mong đợi:
 
 ```text
-50.3.2-prod-r1-github-desktop-operations-guide
+50.3.3-prod-r1-postgres-native-operations-guide
 ```
 
 ## 2.2 Update chuẩn, có backup trước
