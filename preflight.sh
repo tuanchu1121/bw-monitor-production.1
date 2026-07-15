@@ -79,7 +79,7 @@ log "Run v50 source contract"
 "$PYTHON" tests/test_v50_contract.py
 
 log "Verify one-command installer and operations flow"
-./tools/test-installer-flow.sh
+bash ./tools/test-installer-flow.sh
 
 if ((SKIP_LIVE)); then
   log "Skip live PostgreSQL integration by request"
