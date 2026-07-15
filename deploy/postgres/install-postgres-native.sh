@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-RELEASE="50.0.4-prod-r1-one-command"
+RELEASE="50.1.0-prod-r1-production-hardening"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 APP_SRC="$REPO_ROOT/app"
@@ -19,7 +19,7 @@ GITHUB_REPO="${BW_GITHUB_REPO:-tuanchu1121/bw-monitor-production.1}"
 GITHUB_REF="${BW_GITHUB_REF:-main}"
 DOMAIN=""; EMAIL=""; PUBLIC_IP=""; PORT="8080"; SSH_PORT=""
 ADMIN_USER="admin"; ADMIN_PASSWORD="${BW_ADMIN_PASSWORD:-}"; MONITOR_TOKEN="${BW_MONITOR_TOKEN:-}"
-TIMEZONE="Asia/Ho_Chi_Minh"; WORKERS=""; THREADS="4"
+TIMEZONE="Asia/Ho_Chi_Minh"; DISPLAY_TIMEZONE="Asia/Ho_Chi_Minh"; WORKERS=""; THREADS="4"
 PG_PORT="55432"; PG_USER="bw_monitor"; PG_DATABASE="bw_monitor"
 PG_PASSWORD="${BW_PG_PASSWORD:-}"
 TIMESCALE_IMAGE="${BW_TIMESCALE_IMAGE:-timescale/timescaledb:2.27.2-pg17-oss}"
@@ -50,6 +50,7 @@ Options:
   --admin-password VALUE   Prefer BW_ADMIN_PASSWORD environment variable.
   --monitor-token VALUE    Prefer BW_MONITOR_TOKEN environment variable.
   --timezone NAME          Host timezone. Default Asia/Ho_Chi_Minh.
+  --display-timezone NAME  Dashboard timezone: Asia/Ho_Chi_Minh or UTC.
   --workers N              Gunicorn workers. Auto 2-4 by CPU.
   --threads N              Threads per worker. Default 4.
   --pg-port N              Loopback PostgreSQL port. Default 55432.
@@ -79,6 +80,7 @@ while (($#)); do
     --admin-password) ADMIN_PASSWORD="${2:?missing value}"; shift 2;;
     --monitor-token) MONITOR_TOKEN="${2:?missing value}"; shift 2;;
     --timezone) TIMEZONE="${2:?missing value}"; shift 2;;
+    --display-timezone) DISPLAY_TIMEZONE="${2:?missing value}"; shift 2;;
     --workers) WORKERS="${2:?missing value}"; WORKERS_EXPLICIT=1; shift 2;;
     --threads) THREADS="${2:?missing value}"; THREADS_EXPLICIT=1; shift 2;;
     --pg-port) PG_PORT="${2:?missing value}"; shift 2;;
@@ -99,6 +101,7 @@ done
 [[ "$PG_PORT" =~ ^[0-9]+$ ]] && ((PG_PORT>=1 && PG_PORT<=65535)) || die "Invalid PostgreSQL port: $PG_PORT"
 [[ "$THREADS" =~ ^[0-9]+$ ]] && ((THREADS>=1 && THREADS<=64)) || die "Invalid threads: $THREADS"
 [[ "$ADMIN_USER" =~ ^[A-Za-z0-9_.@-]{1,80}$ ]] || die "Invalid Admin username."
+[[ "$DISPLAY_TIMEZONE" == "Asia/Ho_Chi_Minh" || "$DISPLAY_TIMEZONE" == "UTC" ]] || die "--display-timezone supports only Asia/Ho_Chi_Minh or UTC."
 [[ -f "$APP_SRC/app.py" ]] || die "Missing full application source."
 [[ -f "$APP_SRC/bw_pg.py" ]] || die "Missing PostgreSQL data layer."
 [[ -f "$PG_SRC/docker-compose.yml" ]] || die "Missing PostgreSQL compose file."
@@ -124,6 +127,7 @@ if [[ -r "$ENV_FILE" && -r "$PG_ENV" ]]; then
   PG_PASSWORD="${BW_PG_PASSWORD:-$PG_PASSWORD}"
   TIMESCALE_IMAGE="${BW_TIMESCALE_IMAGE:-$TIMESCALE_IMAGE}"
   [[ "${BW_REDIS_ENABLED:-0}" == 1 ]] && REDIS_CACHE=1
+  DISPLAY_TIMEZONE="${BW_DISPLAY_TIMEZONE:-$DISPLAY_TIMEZONE}"
 fi
 ((UPDATE==0 && EXISTING==1)) && UPDATE=1
 ((UPDATE==1 && EXISTING==0)) && die "--update requires an existing v50 installation."
@@ -254,6 +258,18 @@ if ((UPDATE)) && [[ -f "$APP_DIR/backup.sh" ]]; then
   bash "$APP_DIR/backup.sh"
 fi
 
+log "Archive legacy SQLite files if present"
+legacy_archive="$BACKUP_ROOT/legacy-sqlite/$(date +%Y%m%d-%H%M%S)"
+legacy_found=0
+for legacy in "$APP_DIR/bandwidth.db" "$APP_DIR/bandwidth.db-wal" "$APP_DIR/bandwidth.db-shm"; do
+  if [[ -e "$legacy" ]]; then
+    ((legacy_found)) || install -d -m 0700 "$legacy_archive"
+    mv -f "$legacy" "$legacy_archive/"
+    legacy_found=1
+  fi
+done
+((legacy_found)) && warn "Legacy SQLite files archived at $legacy_archive. They are not used by v50."
+
 log "Install full application code"
 install -m 0644 "$APP_SRC/app.py" "$APP_DIR/app.py"
 install -m 0644 "$APP_SRC/bw_pg.py" "$APP_DIR/bw_pg.py"
@@ -291,7 +307,8 @@ BW_API_MAX_LIMIT='500'
 BW_RAW_RETENTION_DAYS='2'
 BW_HOURLY_RETENTION_DAYS='7'
 BW_RETENTION_BATCH_ROWS='25000'
-BW_RETENTION_TZ_OFFSET_SECONDS='25200'
+BW_RETENTION_TZ_OFFSET_SECONDS='$([[ "$DISPLAY_TIMEZONE" == UTC ]] && echo 0 || echo 25200)'
+BW_DISPLAY_TIMEZONE='$DISPLAY_TIMEZONE'
 BW_WRITE_LEGACY_USAGE='0'
 BW_REDIS_ENABLED='$REDIS_CACHE'
 BW_REDIS_URL='redis://127.0.0.1:6379/0'
@@ -319,6 +336,7 @@ BW_GUNICORN_MAX_REQUESTS_JITTER='300'
 BW_GUNICORN_LOG_LEVEL='info'
 BW_GUNICORN_ACCESS_LOG='-'
 BW_GUNICORN_ERROR_LOG='-'
+BW_GUNICORN_WORKER_TMP_DIR='/dev/shm'
 BW_DOMAIN='$DOMAIN'
 BW_LE_EMAIL='$EMAIL'
 BW_GITHUB_REPO='$GITHUB_REPO'
@@ -370,6 +388,9 @@ install -m 0644 "$SCRIPT_DIR/bw-monitor.service" "$SERVICE_FILE"
 install -m 0644 "$SCRIPT_DIR/bw-monitor-maintenance@.service" /etc/systemd/system/bw-monitor-maintenance@.service
 install -m 0644 "$SCRIPT_DIR/bw-monitor-retention.service" /etc/systemd/system/bw-monitor-retention.service
 install -m 0644 "$SCRIPT_DIR/bw-monitor-retention.timer" /etc/systemd/system/bw-monitor-retention.timer
+install -m 0755 "$SCRIPT_DIR/health-watch.sh" "$APP_DIR/health-watch.sh"
+install -m 0644 "$SCRIPT_DIR/bw-monitor-health-watch.service" /etc/systemd/system/bw-monitor-health-watch.service
+install -m 0644 "$SCRIPT_DIR/bw-monitor-health-watch.timer" /etc/systemd/system/bw-monitor-health-watch.timer
 for helper in backup restore doctor db-check audit collect-diagnostics bw-monitorctl; do
   install -m 0755 "$SCRIPT_DIR/$helper.sh" "$APP_DIR/$helper.sh"
 done
@@ -401,8 +422,8 @@ WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer
-systemctl restart bw-monitor-retention.timer bw-monitor-backup.timer
+systemctl enable bw-monitor.service bw-monitor-retention.timer bw-monitor-backup.timer bw-monitor-health-watch.timer
+systemctl restart bw-monitor-retention.timer bw-monitor-backup.timer bw-monitor-health-watch.timer
 
 if [[ -n "$DOMAIN" && $NO_NGINX -eq 0 ]]; then
   log "Configure Nginx for $DOMAIN"
@@ -453,7 +474,6 @@ if [[ -n "$DOMAIN" && $NO_TLS -eq 0 ]]; then
 fi
 if ((RUN_RETENTION)); then systemctl start bw-monitor-retention.service; fi
 
-[[ -f "$APP_DIR/bandwidth.db" ]] && warn "Legacy $APP_DIR/bandwidth.db is ignored. v50 runtime uses PostgreSQL only."
 
 cat <<EOF
 

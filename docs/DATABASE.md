@@ -100,3 +100,14 @@ SELECT relname, n_live_tup, n_dead_tup
 FROM pg_stat_user_tables
 ORDER BY n_live_tup DESC;
 ```
+
+
+## Database size and WAL size
+
+The Admin UI reports these separately:
+
+- **PostgreSQL data** is `pg_database_size(current_database())` and is the logical size of the BW Monitor database.
+- **WAL reserved/recycled** is the physical size of files currently present in `pg_wal`. PostgreSQL preallocates and reuses WAL segments, so this is not another database and does not mean the same amount of live application data exists twice.
+- SQLite `DB/WAL/SHM` runtime files are not used by v50. During install/update, any legacy `bandwidth.db*` files are moved to `/var/backups/bw-monitor/legacy-sqlite/<timestamp>/` for rollback safety.
+
+Do not delete PostgreSQL WAL files manually. PostgreSQL manages them.

@@ -26,7 +26,7 @@ fail(){ echo "ERROR: $*" >&2; exit 1; }
 cd "$ROOT"
 
 log "Validate release identity"
-[[ "$(cat VERSION)" == "50.0.4-prod-r1-one-command" ]] || fail "VERSION mismatch"
+[[ "$(cat VERSION)" == "50.1.0-prod-r1-production-hardening" ]] || fail "VERSION mismatch"
 [[ -f app/app.py && -f app/bw_pg.py && -f deploy/agent/agent.py ]] || fail "full source tree is incomplete"
 [[ ! -d release && ! -d enterprise ]] || fail "legacy duplicate runtime trees must not be shipped"
 
@@ -78,6 +78,9 @@ PY
 log "Run v50 source contract"
 "$PYTHON" tests/test_v50_contract.py
 
+log "Run v50.1 production hardening contract"
+"$PYTHON" tests/test_v501_hardening.py
+
 log "Verify one-command installer and operations flow"
 bash ./tools/test-installer-flow.sh
 
@@ -91,7 +94,7 @@ else
 fi
 
 log "Check documentation for stale runtime architecture"
-if grep -RInE --exclude='MIGRATION_NOT_SUPPORTED.md' \
+if grep -RInE --exclude='MIGRATION_NOT_SUPPORTED.md' --exclude='DATABASE.md' --exclude='TROUBLESHOOTING.md' \
   '(SQLite WAL|bandwidth\.db|Redis Streams|hybrid data plane|deploy/enterprise|deploy/monitor)' README.md docs; then
   fail "stale SQLite/hybrid runtime documentation remains"
 fi

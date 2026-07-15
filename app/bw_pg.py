@@ -151,7 +151,7 @@ def database_size() -> int:
 
 
 def wal_size() -> int:
-    """Approximate WAL directory size visible to PostgreSQL, when permitted."""
+    """Return physical WAL files reserved/recycled by PostgreSQL, when permitted."""
     conn = connect()
     try:
         row = conn.execute(

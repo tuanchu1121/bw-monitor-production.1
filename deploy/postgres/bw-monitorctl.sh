@@ -5,7 +5,7 @@ APP=/opt/bw-monitor
 if [[ -r /etc/default/bw-monitor ]]; then set -a; . /etc/default/bw-monitor; set +a; fi
 case "$CMD" in
   status)
-    systemctl status bw-monitor.service bw-monitor-retention.timer docker --no-pager -l || true
+    systemctl status bw-monitor.service bw-monitor-health-watch.timer bw-monitor-retention.timer docker --no-pager -l || true
     echo; docker ps --filter name=bw-timescaledb
     ;;
   doctor) exec bash "$APP/doctor.sh" "$@" ;;
@@ -36,6 +36,38 @@ case "$CMD" in
   restart)
     systemctl restart bw-monitor.service
     "$APP/doctor.sh"
+    ;;
+  health)
+    port="${BW_PUBLIC_PORT:-8080}"
+    curl -fsS "http://127.0.0.1:${port}/livez"; echo
+    curl -fsS "http://127.0.0.1:${port}/healthz"; echo
+    ;;
+  timezone)
+    action="${1:-status}"; shift || true
+    case "$action" in
+      status)
+        "$APP/venv/bin/python3" - <<'PYTZ'
+import app
+name = app._v501_refresh_timezone(force=True)
+print(f"{name} ({app.DISPLAY_TIMEZONE_CHOICES[name]})")
+PYTZ
+        ;;
+      set)
+        zone="${1:?Usage: bw-monitorctl timezone set UTC|Asia/Ho_Chi_Minh}"
+        [[ "$zone" == "UTC" || "$zone" == "Asia/Ho_Chi_Minh" ]] || { echo 'Supported: UTC or Asia/Ho_Chi_Minh' >&2; exit 2; }
+        "$APP/venv/bin/python3" - "$zone" <<'PYTZ'
+import sys
+import app
+zone = sys.argv[1]
+app.set_admin_setting(app.V501_TIMEZONE_SETTING, zone)
+app._v501_refresh_timezone(force=True)
+app._v48140_bump_cache_generation()
+print(f"Display timezone: {zone}")
+PYTZ
+        systemctl reload bw-monitor.service 2>/dev/null || systemctl restart bw-monitor.service
+        ;;
+      *) echo 'Usage: bw-monitorctl timezone status|set UTC|Asia/Ho_Chi_Minh' >&2; exit 2 ;;
+    esac
     ;;
   retention)
     systemctl start bw-monitor-retention.service
@@ -95,6 +127,9 @@ bw-monitorctl commands:
   logs [target] [lines]  monitor|retention|postgres|all
   follow [target]        live logs
   restart                restart and verify web
+  health                 local process and PostgreSQL health endpoints
+  timezone status        show shared display timezone
+  timezone set ZONE      set UTC or Asia/Ho_Chi_Minh
   retention              run bounded retention now
   vacuum                 online VACUUM/ANALYZE
   psql                   PostgreSQL shell

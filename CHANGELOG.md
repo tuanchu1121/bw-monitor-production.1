@@ -1,10 +1,15 @@
 # Changelog
 
-## 50.0.4-prod-r1-one-command
+## 50.1.0-prod-r1-production-hardening
 
-- Fixed Abuse Policy save/create on PostgreSQL. `abuse_policy_versions` is keyed by `revision` and is no longer incorrectly treated as an `id`-serial table.
-- Made legacy `BEGIN` and `BEGIN IMMEDIATE` compatibility statements transaction no-ops under psycopg, removing duplicate transaction warnings while preserving commit/rollback semantics.
-- Added static and live PostgreSQL regression coverage for creating an Abuse policy version.
+- Added `/livez` and `/healthz`, a 30-second local liveness watchdog, faster systemd recovery, Gunicorn worker temp files in `/dev/shm`, and hardened Nginx upstream handling to reduce intermittent Bad Gateway windows.
+- Reworked Current Abuse into a fluid full-width table with compact columns and responsive card rows on narrower screens.
+- Corrected PostgreSQL size labels: the headline now shows actual database data size; physical WAL files are shown separately as reserved/recycled PostgreSQL storage, and the obsolete SQLite SHM label is removed.
+- Automatically archives leftover `bandwidth.db`, `bandwidth.db-wal` and `bandwidth.db-shm` files during install/update. They are never used by the PostgreSQL-native runtime.
+- Hidden VMs can no longer revive a Node through Dashboard search aliases; hidden Nodes/VMs are excluded consistently from Storage results and filter dropdowns.
+- Persisted page-cache generations in PostgreSQL so Hide/Restore invalidates every Gunicorn worker immediately even without Redis.
+- Added shared display timezone selection for `Asia/Ho_Chi_Minh (UTC+7)` and `UTC (UTC+0)` in Admin and through `bw-monitorctl timezone`.
+- Kept all timestamps stored as Unix/UTC values; the timezone setting changes display and retained hourly bucket alignment only.
 
 ## 50.0.4-prod-r1-one-command
 

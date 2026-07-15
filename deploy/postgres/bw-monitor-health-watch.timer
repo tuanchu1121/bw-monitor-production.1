@@ -1,0 +1,11 @@
+[Unit]
+Description=Check BW Monitor local web liveness every 30 seconds
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

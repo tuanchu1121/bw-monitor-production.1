@@ -85,7 +85,13 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("BW_ADMIN_COOKIE_SECURE", "0") == "1",
 )
 
-TZ_NAME = "Asia/Ho_Chi_Minh"
+DISPLAY_TIMEZONE_CHOICES = {
+    "Asia/Ho_Chi_Minh": "Ho Chi Minh (UTC+7)",
+    "UTC": "UTC (UTC+0)",
+}
+TZ_NAME = os.environ.get("BW_DISPLAY_TIMEZONE", "Asia/Ho_Chi_Minh")
+if TZ_NAME not in DISPLAY_TIMEZONE_CHOICES:
+    TZ_NAME = "Asia/Ho_Chi_Minh"
 TZ = ZoneInfo(TZ_NAME)
 
 PUBLIC_BRIDGE = "br0"
@@ -2785,6 +2791,8 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_inventory svi
                     WHERE svi.node=l.node
+                      AND COALESCE(svi.status, 'active')!='hidden'
+                      AND svi.deleted_at IS NULL
                       AND (
                             svi.vm_uuid LIKE ?
                             OR COALESCE(svi.last_iface, '') LIKE ?
@@ -2795,6 +2803,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_location_latest svl
                     WHERE svl.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory vis
+                            WHERE vis.node=svl.node AND vis.vm_uuid=svl.vm_uuid
+                              AND COALESCE(vis.status, 'active')!='hidden'
+                              AND vis.deleted_at IS NULL
+                          )
                       AND (
                             svl.vm_uuid LIKE ?
                             OR COALESCE(svl.last_iface, '') LIKE ?
@@ -2805,6 +2819,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_node_presence svp
                     WHERE svp.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory vis
+                            WHERE vis.node=svp.node AND vis.vm_uuid=svp.vm_uuid
+                              AND COALESCE(vis.status, 'active')!='hidden'
+                              AND vis.deleted_at IS NULL
+                          )
                       AND (
                             svp.vm_uuid LIKE ?
                             OR COALESCE(svp.last_iface, '') LIKE ?
@@ -2815,6 +2835,12 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
                     SELECT 1
                     FROM vm_latest_metrics svm
                     WHERE svm.node=l.node
+                      AND EXISTS (
+                            SELECT 1 FROM vm_inventory vis
+                            WHERE vis.node=svm.node AND vis.vm_uuid=svm.vm_uuid
+                              AND COALESCE(vis.status, 'active')!='hidden'
+                              AND vis.deleted_at IS NULL
+                          )
                       AND (
                             svm.vm_uuid LIKE ?
                             OR COALESCE(svm.iface, '') LIKE ?
@@ -2928,8 +2954,8 @@ def get_node_rows(period, q="", sort_by="node", order="asc", target_ts=None):
         x.live_last_seen,
         x.selected_bucket,
         COALESCE(s.retention_tier, 'raw') AS retention_tier,
-        COALESCE(NULLIF(s.vm_count, 0), vn.vm_count, 0) AS vm_count,
-        COALESCE(NULLIF(s.iface_count, 0), vn.iface_count, 0) AS iface_count,
+        COALESCE(vn.vm_count, 0) AS vm_count,
+        COALESCE(vn.iface_count, 0) AS iface_count,
         CASE WHEN COALESCE(p.public_present,0)=1 THEN COALESCE(p.public_total,0) ELSE COALESCE(vn.public_total,0) END AS public_total,
         CASE WHEN COALESCE(p.private_present,0)=1 THEN COALESCE(p.private_total,0) ELSE COALESCE(vn.private_total,0) END AS private_total,
         (CASE WHEN COALESCE(p.public_present,0)=1 THEN COALESCE(p.public_total,0) ELSE COALESCE(vn.public_total,0) END +
@@ -4798,7 +4824,8 @@ def get_database_maintenance_stats():
         "db_size": db_size,
         "wal_size": wal_size,
         "shm_size": 0,
-        "total_size": db_size + wal_size,
+        "total_size": db_size,
+        "physical_size": db_size + wal_size,
         "page_count": page_count,
         "freelist_count": dead_rows,
         "reusable_bytes": 0,
@@ -4841,7 +4868,7 @@ def database_maintenance_card(message="", error=""):
         rows = '<tr><td colspan="8" class="empty">No maintenance jobs yet</td></tr>'
     return f"""
     <div class="card">
-        <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>PostgreSQL <b>{human(s['total_size'])}</b></span><span>Database <b>{human(s['db_size'])}</b></span><span>WAL <b>{human(s['wal_size'])}</b></span><span>Dead rows <b>{s['freelist_count']:,}</b></span></div></div>
+        <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>PostgreSQL data <b>{human(s['db_size'])}</b></span><span>WAL reserved/recycled <b>{human(s['wal_size'])}</b></span><span>Dead rows <b>{s['freelist_count']:,}</b></span></div></div>
         {notice}
         <div class="admin-note">Jobs run outside Gunicorn through <b>bw-monitor-maintenance@.service</b>. Purge actions are queued in batches of at most <b>3 nodes or VMs</b> and executed one batch at a time, so the Admin request returns immediately instead of holding a web worker.</div>
         <div class="bulk-bar">
@@ -4975,7 +5002,7 @@ def monitor_system_health_card():
             <div class="stat">CPU Load 1/5/15<b>{h['load1']:.2f} / {h['load5']:.2f} / {h['load15']:.2f}</b><small>{h['cpu_count']} CPU cores, load1 ~= {h['load_pct']}%</small></div>
             <div class="stat">Memory<b>{human(h['mem_used'])} / {human(h['mem_total'])}</b><small>Available {human(h['mem_available'])}, used {h['mem_pct']}%</small></div>
             <div class="stat">Disk<b>{human(h['disk_used'])} / {human(h['disk_total'])}</b><small>{escape(h['disk_path'])}, free {human(h['disk_free'])}, used {h['disk_pct']}%</small></div>
-            <div class="stat">Database<b>{human(h['db_size'] + h['wal_size'] + h['shm_size'])}</b><small>DB {human(h['db_size'])}, WAL {human(h['wal_size'])}, SHM {human(h['shm_size'])}</small></div>
+            <div class="stat">PostgreSQL data<b>{human(h['db_size'])}</b><small>WAL reserved/recycled {human(h['wal_size'])} · not a second database</small></div>
             <div class="stat">Inventory<b>{h['node_count']} nodes / {h['vm_count']} VMs</b><small>Visible inventory rows only</small></div>
             <div class="stat">Logs<b>{h['account_log_count']} account / {h['node_log_count']} node</b><small>Retention still applies automatically</small></div>
             <div class="stat">Uptime<b>{human_age(h['uptime'])}</b><small>Python {escape(h['python'])}</small></div>
@@ -13077,8 +13104,8 @@ def database_maintenance_card(message="", error=""):
       <div class="table-title-row"><h3>Maintenance & Purge Queue</h3><div class="count-badges"><span>Batch limit <b>{MAX_PURGE_ITEMS_PER_JOB}</b></span><span>Execution <b>single worker</b></span><span>Active <b>{active_count}</b></span></div></div>
       {notice}
       <div class="admin-note">Exactly <b>one maintenance job</b> may be active. Bulk purge selections stay inside one worker and are processed in internal batches of at most <b>{MAX_PURGE_ITEMS_PER_JOB}</b> items, preventing a systemd-unit stampede.</div>
-      <div class="queue-summary"><div><small>Waiting</small><b>{status_counts.get('queued',0)}</b></div><div><small>Running</small><b>{status_counts.get('running',0)}</b></div><div><small>Completed</small><b>{status_counts.get('ok',0)}</b></div><div><small>Failed</small><b>{status_counts.get('error',0)}</b></div><div><small>DB + WAL</small><b>{human(s['db_size']+s['wal_size'])}</b></div></div>
-      <div class="bulk-bar"><a class="btn" href="{escape(refresh_href,quote=True)}">Refresh queue</a><label><input type="checkbox" id="queue-auto-refresh"> Auto refresh every 10s</label><span class="table-hint">Main DB {human(s['db_size'])} · WAL {human(s['wal_size'])} · Reusable {human(s['reusable_bytes'])}</span></div>
+      <div class="queue-summary"><div><small>Waiting</small><b>{status_counts.get('queued',0)}</b></div><div><small>Running</small><b>{status_counts.get('running',0)}</b></div><div><small>Completed</small><b>{status_counts.get('ok',0)}</b></div><div><small>Failed</small><b>{status_counts.get('error',0)}</b></div><div><small>PostgreSQL data</small><b>{human(s['db_size'])}</b></div></div>
+      <div class="bulk-bar"><a class="btn" href="{escape(refresh_href,quote=True)}">Refresh queue</a><label><input type="checkbox" id="queue-auto-refresh"> Auto refresh every 10s</label><span class="table-hint">PostgreSQL data {human(s['db_size'])} · WAL reserved/recycled {human(s['wal_size'])} · WAL is managed by PostgreSQL</span></div>
       <div class="bulk-bar">
         <form class="inline-form" method="post" action="{url_for('admin_database_maintenance')}" onsubmit="return confirm('Run bounded retention now? Latest 48 hours stay at 5-minute resolution; days 3-7 keep one real snapshot per hour; older history is deleted.')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><input type="hidden" name="action" value="retention"><button class="btn" type="submit">Run 2d raw / 7d retention</button></form>
         <form class="inline-form" method="post" action="{url_for('admin_database_maintenance')}" onsubmit="return confirm('Request PostgreSQL checkpoint? Normally this is not required.')"><input type="hidden" name="csrf_token" value="{escape(csrf_token(),quote=True)}"><input type="hidden" name="action" value="checkpoint"><button class="btn" type="submit">Checkpoint</button></form>
@@ -14518,7 +14545,7 @@ def _v490_admin_overview(stats):
         ("VMs", f"{stats['vms']:,}", f"{stats['hidden_vms']:,} hidden", url_for("admin_page",section="vms")),
         ("Current abuse", f"{stats['abuse']:,}", "Open policy and history", url_for("admin_abuse_page")),
         ("Queue", f"{stats['queue']:,}", "Waiting or running", url_for("admin_page",section="maintenance")),
-        ("Database", human(s['db_size']+s['wal_size']), "DB + WAL", url_for("admin_page",section="maintenance")),
+        ("PostgreSQL data", human(s['db_size']), f"WAL reserved {human(s['wal_size'])}", url_for("admin_page",section="maintenance")),
     ]
     html = ''.join(f'<a class="admin-kpi" href="{escape(href,quote=True)}"><span>{escape(label)}</span><b>{escape(value)}</b><small>{escape(sub)}</small></a>' for label,value,sub,href in cards)
     quick = [
@@ -26748,22 +26775,40 @@ V48139_BUILD = "r2"
 V48139_UI_CSS = r'''
 <style id="v48139-abuse-storage-cards">
 /* Current Abuse: add one compact disk-capacity column without changing the rest. */
-.abuse-current-v48139{min-width:2380px!important}
-.abuse-current-v48139 th:nth-child(1){width:42px!important}
-.abuse-current-v48139 th:nth-child(2){width:292px!important}
-.abuse-current-v48139 th:nth-child(3){width:370px!important}
-.abuse-current-v48139 th:nth-child(4){width:235px!important}
-.abuse-current-v48139 th:nth-child(5){width:250px!important}
-.abuse-current-v48139 th:nth-child(6){width:195px!important}
-.abuse-current-v48139 th:nth-child(7){width:280px!important}
-.abuse-current-v48139 th:nth-child(8){width:205px!important}
-.abuse-current-v48139 th:nth-child(9){width:235px!important}
-.abuse-current-v48139 th:nth-child(10){width:165px!important}
+.abuse-current-v48139{width:100%!important;min-width:0!important;table-layout:fixed!important}
+.abuse-current-v48139 th:nth-child(1){width:3%!important}
+.abuse-current-v48139 th:nth-child(2){width:15%!important}
+.abuse-current-v48139 th:nth-child(3){width:16%!important}
+.abuse-current-v48139 th:nth-child(4){width:11%!important}
+.abuse-current-v48139 th:nth-child(5){width:12%!important}
+.abuse-current-v48139 th:nth-child(6){width:8%!important}
+.abuse-current-v48139 th:nth-child(7){width:10%!important}
+.abuse-current-v48139 th:nth-child(8){width:8%!important}
+.abuse-current-v48139 th:nth-child(9){width:11%!important}
+.abuse-current-v48139 th:nth-child(10){width:6%!important}
 .abuse-disk-capacity{min-width:0;text-align:left}
 .abuse-disk-capacity .resource-primary{font-size:14px!important}
 .abuse-disk-capacity .resource-context{justify-content:flex-start}
 .abuse-disk-capacity .resource-foot{text-align:left!important}
 .abuse-disk-capacity.resource-na .resource-primary{color:#98a2b3!important}
+
+
+.endpoint-vm-abuse-page .wrap{padding-left:16px!important;padding-right:16px!important;max-width:none!important}
+.endpoint-vm-abuse-page .table-wrap{overflow-x:hidden!important}
+.abuse-current-v48139 th,.abuse-current-v48139 td{padding:8px 7px!important;min-width:0!important;vertical-align:top!important}
+.abuse-current-v48139 td{white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+.abuse-current-v48139 .mono,.abuse-current-v48139 code{white-space:normal!important;overflow-wrap:anywhere!important}
+.abuse-current-v48139 .metric-rich,.abuse-current-v48139 .metric-sub{font-size:11px!important;line-height:1.35!important}
+@media (max-width:1180px){
+  .endpoint-vm-abuse-page .table-wrap{overflow:visible!important}
+  .abuse-current-v48139,.abuse-current-v48139 tbody,.abuse-current-v48139 tr,.abuse-current-v48139 td{display:block!important;width:100%!important}
+  .abuse-current-v48139 thead{display:none!important}
+  .abuse-current-v48139 tr{box-sizing:border-box!important;margin:0 0 12px!important;padding:10px!important;border:1px solid var(--line,#d8dee8)!important;border-radius:12px!important;background:var(--card,#fff)!important}
+  .abuse-current-v48139 td{box-sizing:border-box!important;display:grid!important;grid-template-columns:120px minmax(0,1fr)!important;gap:10px!important;border:0!important;border-bottom:1px dashed var(--line,#d8dee8)!important}
+  .abuse-current-v48139 td:last-child{border-bottom:0!important}
+  .abuse-current-v48139 td:before{font-size:10px!important;font-weight:800!important;letter-spacing:.06em!important;color:var(--muted,#64748b)!important;text-transform:uppercase!important}
+  .abuse-current-v48139 td:nth-child(1):before{content:"Rank"}.abuse-current-v48139 td:nth-child(2):before{content:"Node / VM"}.abuse-current-v48139 td:nth-child(3):before{content:"Reason / severity"}.abuse-current-v48139 td:nth-child(4):before{content:"Network average"}.abuse-current-v48139 td:nth-child(5):before{content:"PPS peak / window"}.abuse-current-v48139 td:nth-child(6):before{content:"CPU"}.abuse-current-v48139 td:nth-child(7):before{content:"RAM"}.abuse-current-v48139 td:nth-child(8):before{content:"Disk capacity"}.abuse-current-v48139 td:nth-child(9):before{content:"Disk I/O"}.abuse-current-v48139 td:nth-child(10):before{content:"Last seen"}
+}
 
 /* Storage cards: one strong VM/Node card, clear sections, compact disk rows. */
 .storage-card-list-v48139{display:grid;gap:14px}
@@ -27248,7 +27293,7 @@ _v48137_storage_node_group_cards = _v48139_storage_node_group_cards
 # Optional Redis hot cache, PostgreSQL pooling, materialized disk summaries,
 # server-side pagination and browser render containment.
 # ---------------------------------------------------------------------------
-V48140_VERSION = "50.0.0"
+V48140_VERSION = "50.1.0"
 V48140_BUILD = "prod-r1-postgres-native"
 
 import gzip as _v48140_gzip
@@ -27664,7 +27709,13 @@ def _v48140_public_ip_join(alias="s"):
 
 
 def _v48140_disk_search_clause(values, summary_alias="s"):
-    clauses = [f"{summary_alias}.last_seen>=?", "COALESCE(vi.status,'active')!='hidden'"]
+    clauses = [
+        f"{summary_alias}.last_seen>=?",
+        "COALESCE(vi.status,'active')!='hidden'",
+        "vi.deleted_at IS NULL",
+        "COALESCE(ni.status,'active')!='hidden'",
+        "ni.deleted_at IS NULL",
+    ]
     params = []
     if values.get("node"):
         clauses.append(f"{summary_alias}.node=?")
@@ -27696,6 +27747,7 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
       SELECT COUNT(*)
         FROM vm_disk_summary_current s
         LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+        LEFT JOIN node_inventory ni ON ni.node=s.node
         LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
        WHERE {where_sql}
     """, [PUBLIC_BRIDGE] + params).fetchone()[0], 0)
@@ -27708,6 +27760,7 @@ def _v48133_storage_disk_groups(conn, values, start_ts):
              s.read_bps,s.write_bps,s.read_iops,s.write_iops,s.last_seen
         FROM vm_disk_summary_current s
         LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+        LEFT JOIN node_inventory ni ON ni.node=s.node
         LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
        WHERE {where_sql}
        ORDER BY {sort_map[values['sort']]} {direction},s.node COLLATE NOCASE,s.vm_uuid COLLATE NOCASE
@@ -27970,7 +28023,7 @@ def _v48140_response_performance(response):
         duration_ms = max(0.0, (_v48140_perf_counter() - started) * 1000.0)
         response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
         response.headers["X-BW-App-Time-Ms"] = f"{duration_ms:.1f}"
-    response.headers["X-BW-Performance"] = "50.0.0-postgres-native"
+    response.headers["X-BW-Performance"] = "50.1.0-production-hardening"
     if (
         response.status_code == 200
         and not response.direct_passthrough
@@ -28034,7 +28087,11 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
     }
     if values.get("sort") not in sort_map:
         values["sort"] = "writeiops"
-    where = ["s.last_seen>=?"]
+    where = [
+        "s.last_seen>=?",
+        "COALESCE(ni.status,'active')!='hidden'",
+        "ni.deleted_at IS NULL",
+    ]
     params = [start_ts]
     if values.get("node"):
         where.append("s.node=?")
@@ -28046,9 +28103,13 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
     where_sql = " AND ".join(where)
     cte = f"""
       WITH vc AS (
-        SELECT node,COUNT(*) AS vm_count,COALESCE(SUM(disk_count),0) AS disk_count
-          FROM vm_disk_summary_current
-         GROUP BY node
+        SELECT s.node,COUNT(*) AS vm_count,COALESCE(SUM(s.disk_count),0) AS disk_count
+          FROM vm_disk_summary_current s
+          LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+          LEFT JOIN node_inventory ni2 ON ni2.node=s.node
+         WHERE COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+           AND COALESCE(ni2.status,'active')!='hidden' AND ni2.deleted_at IS NULL
+         GROUP BY s.node
       ),
       g AS (
         SELECT s.node,COALESCE(MAX(b.primary_ipv4),'') AS public_ipv4,
@@ -28059,6 +28120,7 @@ def _v48140_node_group_cards_fast(conn, values, start_ts):
                MAX(s.last_seen) AS last_seen,COALESCE(MAX(vc.disk_count),0) AS disk_count,
                COALESCE(MAX(vc.vm_count),0) AS vm_count
           FROM node_storage_mount_summary_current s
+          LEFT JOIN node_inventory ni ON ni.node=s.node
           LEFT JOIN node_bridge_addresses_latest b ON b.node=s.node AND b.bridge=?
           LEFT JOIN vc ON vc.node=s.node
          WHERE {where_sql}
@@ -28184,7 +28246,7 @@ def api_v1_performance_v48140():
             try: redis_ok = bool(client.ping())
             except Exception: redis_ok = False
         return jsonify({
-            "version":"50.0.4-prod-r1-one-command",
+            "version":"50.1.0-prod-r1-production-hardening",
             "database":{
                 "engine":"PostgreSQL + TimescaleDB",
                 "database":pg.get("database"),
@@ -28276,3 +28338,274 @@ def _v48139_current_rows(values):
     finally:
         conn.close()
     return _v48139_current_rows_v48140_summary(values)
+
+# ---------------------------------------------------------------------------
+# v50.1.0 - production hardening, visibility correctness and timezone control
+# ---------------------------------------------------------------------------
+V501_VERSION = "50.1.0-prod-r1-production-hardening"
+V501_TIMEZONE_SETTING = "display_timezone"
+_v501_timezone_cache = {"name": None, "checked": 0.0}
+_v501_generation_cache = {"value": 5010001, "checked": 0.0}
+
+
+def _v501_refresh_timezone(force=False):
+    """Load the shared display timezone from PostgreSQL for every worker."""
+    global TZ_NAME, TZ, RETENTION_TZ_OFFSET_SECONDS
+    now_mono = time.monotonic()
+    if not force and _v501_timezone_cache["name"] and now_mono - _v501_timezone_cache["checked"] < 2.0:
+        return _v501_timezone_cache["name"]
+    fallback = os.environ.get("BW_DISPLAY_TIMEZONE", "Asia/Ho_Chi_Minh")
+    if fallback not in DISPLAY_TIMEZONE_CHOICES:
+        fallback = "Asia/Ho_Chi_Minh"
+    name = fallback
+    try:
+        value = str(get_admin_setting(V501_TIMEZONE_SETTING, fallback) or fallback).strip()
+        if value in DISPLAY_TIMEZONE_CHOICES:
+            name = value
+    except Exception:
+        name = fallback
+    TZ_NAME = name
+    TZ = ZoneInfo(name)
+    RETENTION_TZ_OFFSET_SECONDS = 0 if name == "UTC" else 25200
+    _v501_timezone_cache.update(name=name, checked=now_mono)
+    return name
+
+
+@app.before_request
+def _v501_shared_runtime_settings():
+    _v501_refresh_timezone()
+
+
+def fmt_full(ts):
+    _v501_refresh_timezone()
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fmt_range(ts):
+    _v501_refresh_timezone()
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def fmt_push(ts):
+    _v501_refresh_timezone()
+    if not ts:
+        return "-"
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%H:%M")
+
+
+def fmt_chart_label(ts, step):
+    _v501_refresh_timezone()
+    dt = datetime.fromtimestamp(int(ts), TZ)
+    step = int(step or 0)
+    if step >= 86400:
+        return dt.strftime("%m-%d")
+    if step >= 3600:
+        return dt.strftime("%m-%d %H:%M")
+    return dt.strftime("%H:%M")
+
+
+def _parse_datetime_local(value):
+    _v501_refresh_timezone()
+    value = (value or "").strip()
+    if not value:
+        return 0
+    try:
+        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M").replace(tzinfo=TZ).timestamp())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _datetime_local_value(ts):
+    _v501_refresh_timezone()
+    if not ts:
+        return ""
+    return datetime.fromtimestamp(int(ts), TZ).strftime("%Y-%m-%dT%H:%M")
+
+
+@app.route("/admin/display-timezone", methods=["POST"])
+def admin_display_timezone_v501():
+    deny = require_admin()
+    if deny:
+        return deny
+    name = (request.form.get("timezone") or "").strip()
+    if name not in DISPLAY_TIMEZONE_CHOICES:
+        return Response("Unsupported timezone\n", status=400, mimetype="text/plain")
+    set_admin_setting(V501_TIMEZONE_SETTING, name)
+    _v501_refresh_timezone(force=True)
+    _v48140_bump_cache_generation()
+    return redirect(url_for("admin_page", section="overview", dbmsg=f"Display timezone changed to {DISPLAY_TIMEZONE_CHOICES[name]}."))
+
+
+_v501_admin_overview_base = _v490_admin_overview
+
+
+def _v490_admin_overview(stats):
+    current = _v501_refresh_timezone()
+    options = "".join(
+        f'<option value="{escape(name, quote=True)}"{" selected" if name == current else ""}>{escape(label)}</option>'
+        for name, label in DISPLAY_TIMEZONE_CHOICES.items()
+    )
+    timezone_card = f"""
+    <div class="card"><div class="section-head"><div><h3>Display timezone</h3><p>Change timestamps across Dashboard, Top VM, Abuse, Storage and Admin. Data remains stored in UTC.</p></div></div>
+      <form method="post" action="{url_for('admin_display_timezone_v501')}" class="toolbar-form">
+        <input type="hidden" name="csrf_token" value="{escape(csrf_token(), quote=True)}">
+        <label>Timezone<select name="timezone">{options}</select></label>
+        <button class="btn" type="submit">Save timezone</button>
+      </form>
+    </div>"""
+    return timezone_card + _v501_admin_overview_base(stats)
+
+
+# Cache generations are persisted in PostgreSQL so every Gunicorn worker sees
+# hide/restore changes immediately even when optional Redis is disabled.
+def _v48140_cache_generation():
+    now_mono = time.monotonic()
+    if now_mono - _v501_generation_cache["checked"] < 1.0:
+        return max(5010001, safe_int(_v501_generation_cache["value"], 5010001))
+    value = 5010001
+    try:
+        raw = get_admin_setting("page_cache_generation", str(value))
+        value = max(value, safe_int(raw, value))
+    except Exception:
+        value = max(value, safe_int(_v501_generation_cache["value"], value))
+    _v501_generation_cache.update(value=value, checked=now_mono)
+    return value
+
+
+def _v48140_bump_cache_generation():
+    global _v48140_local_generation
+    conn = db()
+    try:
+        now = now_ts()
+        conn.execute("""
+          INSERT INTO admin_settings(key,value,updated_at)
+          VALUES('page_cache_generation',?,?)
+          ON CONFLICT(key) DO UPDATE SET
+            value=CAST(COALESCE(NULLIF(admin_settings.value,''),'5010000') AS INTEGER)+1,
+            updated_at=excluded.updated_at
+        """, (str(max(5010001, _v48140_local_generation + 1)), now))
+        row = conn.execute("SELECT value FROM admin_settings WHERE key='page_cache_generation'").fetchone()
+        conn.commit()
+        generation = max(5010001, safe_int((row or [5010001])[0], 5010001))
+    finally:
+        conn.close()
+    with _v48140_local_lock:
+        _v48140_local_generation = generation
+        _v48140_local_cache.clear()
+    _v501_generation_cache.update(value=generation, checked=time.monotonic())
+    client = _v48140_redis_client()
+    if client is not None:
+        try:
+            client.delete("bw:v48140:purge-generation")
+        except Exception:
+            pass
+    return generation
+
+
+@app.after_request
+def _v501_invalidate_visibility_cache(response):
+    if request.method == "POST" and 300 <= response.status_code < 400 and request.path in {
+        "/admin/delete_vm", "/admin/restore_vm", "/admin/delete_node", "/admin/restore_node",
+        "/admin/bulk_nodes", "/admin/bulk_vms", "/admin/purge_node_vms",
+    }:
+        try:
+            _v48140_bump_cache_generation()
+        except Exception:
+            app.logger.exception("Could not invalidate page cache after visibility change")
+    return response
+
+
+# Filter dropdowns must obey the same visibility contract as result queries.
+def _v48140_fast_filter_options(conn, values):
+    nodes = [str(r[0]) for r in conn.execute("""
+      SELECT node FROM (
+        SELECT s.node
+          FROM vm_disk_summary_current s
+          LEFT JOIN vm_inventory vi ON vi.node=s.node AND vi.vm_uuid=s.vm_uuid
+          LEFT JOIN node_inventory ni ON ni.node=s.node
+         WHERE COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+           AND COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL
+        UNION
+        SELECT s.node
+          FROM node_storage_mount_summary_current s
+          LEFT JOIN node_inventory ni ON ni.node=s.node
+         WHERE COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL
+      ) visible_nodes GROUP BY node ORDER BY node COLLATE NOCASE
+    """).fetchall()]
+    params = []
+    node_filter_vm = ""
+    node_filter_storage = ""
+    if values.get("node"):
+        node_filter_vm = " AND d.node=?"
+        node_filter_storage = " AND s.node=?"
+        params = [values["node"], values["node"]]
+    mounts = [str(r[0]) for r in conn.execute(f"""
+      SELECT mount FROM (
+        SELECT d.mount
+          FROM vm_disk_current d
+          LEFT JOIN vm_inventory vi ON vi.node=d.node AND vi.vm_uuid=d.vm_uuid
+          LEFT JOIN node_inventory ni ON ni.node=d.node
+         WHERE d.role='customer' AND d.mount!=''{node_filter_vm}
+           AND COALESCE(vi.status,'active')!='hidden' AND vi.deleted_at IS NULL
+           AND COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL
+        UNION
+        SELECT s.mount
+          FROM node_storage_mount_summary_current s
+          LEFT JOIN node_inventory ni ON ni.node=s.node
+         WHERE s.mount!=''{node_filter_storage}
+           AND COALESCE(ni.status,'active')!='hidden' AND ni.deleted_at IS NULL
+      ) visible_mounts GROUP BY mount ORDER BY mount COLLATE NOCASE
+    """, params).fetchall()]
+    node_options = ['<option value="">All nodes</option>'] + [
+        f'<option value="{escape(item,quote=True)}"{" selected" if item == values.get("node") else ""}>{escape(item)}</option>' for item in nodes
+    ]
+    mount_options = ['<option value="">All storage</option>'] + [
+        f'<option value="{escape(item,quote=True)}"{" selected" if item == values.get("mount") else ""}>{escape(item)}</option>' for item in mounts
+    ]
+    return "".join(node_options), "".join(mount_options)
+
+
+_v48137_storage_filter_options = _v48140_fast_filter_options
+
+
+@app.route("/livez")
+def livez_v501():
+    return jsonify({"status": "ok", "service": "bw-monitor", "version": V501_VERSION})
+
+
+@app.route("/healthz")
+def healthz_v501():
+    try:
+        health = dbapi.healthcheck()
+        return jsonify({"status": "ok", "database": health.get("database"), "version": V501_VERSION})
+    except Exception as exc:
+        app.logger.exception("PostgreSQL health check failed")
+        return jsonify({"status": "error", "error": str(exc)[:200], "version": V501_VERSION}), 503
+
+
+V501_UI_CSS = r'''
+<style id="v501-production-hardening">
+.db-wal-note{font-size:12px;color:var(--muted,#64748b);line-height:1.45}
+.endpoint-vm-abuse-page .card{max-width:100%;box-sizing:border-box}
+.endpoint-vm-abuse-page .abuse-current-v48139{font-size:12px}
+@media(max-width:760px){.endpoint-vm-abuse-page .wrap{padding:10px!important}.abuse-current-v48139 td{grid-template-columns:92px minmax(0,1fr)!important}}
+</style>
+'''
+_page_v501_base = page
+
+
+def page(title, content):
+    _v501_refresh_timezone()
+    return _page_v501_base(title, V501_UI_CSS + content)
+
+
+# Initialize shared settings for background jobs that import this module without
+# serving an HTTP request (retention, maintenance and diagnostics).
+try:
+    _v501_refresh_timezone(force=True)
+except Exception:
+    pass

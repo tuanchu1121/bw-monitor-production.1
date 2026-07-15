@@ -2,11 +2,20 @@
 
 Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-> Release: `50.0.4-prod-r1-one-command`
+> Release: `50.1.0-prod-r1-production-hardening`
 
 > **Canonical-source bootstrap:** the installer verifies `SHA256SUMS` and stages only files in the release manifest. Old v48/v49 folders accidentally left in a GitHub Desktop repository are ignored during installation.
 
 > Windows GitHub Desktop is supported. The bootstrap validates required files, invokes source scripts through `bash`, and normalizes Linux shell modes after download.
+
+
+## v50.1 production hardening
+
+- `/livez` and `/healthz` endpoints plus a systemd liveness watchdog reduce web downtime and automatically recover a dead Gunicorn process.
+- Admin can switch the shared display timezone between `Asia/Ho_Chi_Minh (UTC+7)` and `UTC (UTC+0)` without rewriting stored data.
+- Hidden Nodes/VMs are excluded from Dashboard search, Storage results and Storage filters with cross-worker cache invalidation.
+- Admin database cards show PostgreSQL data separately from reserved/recycled WAL. WAL is not a second database.
+- Current Abuse is fluid on desktop and becomes compact cards on narrower displays.
 
 ## Architecture
 
