@@ -1,51 +1,51 @@
 # Management CLI
 
-`bw-monitorctl` is installed at `/usr/local/sbin/bw-monitorctl`.
+`virtinfra-monitorctl` is installed at `/usr/local/sbin/virtinfra-monitorctl`.
 
 ```bash
-bw-monitorctl help
+virtinfra-monitorctl help
 ```
 
 Core commands:
 
 ```bash
-bw-monitorctl status
-bw-monitorctl doctor
-bw-monitorctl audit
-bw-monitorctl db-check
-bw-monitorctl urls
-bw-monitorctl credentials
-bw-monitorctl version
+virtinfra-monitorctl status
+virtinfra-monitorctl doctor
+virtinfra-monitorctl audit
+virtinfra-monitorctl db-check
+virtinfra-monitorctl urls
+virtinfra-monitorctl credentials
+virtinfra-monitorctl version
 ```
 
 Logs:
 
 ```bash
-bw-monitorctl logs monitor 300
-bw-monitorctl logs retention 300
-bw-monitorctl logs postgres 300
-bw-monitorctl logs all 300
-bw-monitorctl follow monitor
-bw-monitorctl follow postgres
+virtinfra-monitorctl logs monitor 300
+virtinfra-monitorctl logs retention 300
+virtinfra-monitorctl logs postgres 300
+virtinfra-monitorctl logs all 300
+virtinfra-monitorctl follow monitor
+virtinfra-monitorctl follow postgres
 ```
 
 Database and maintenance:
 
 ```bash
-bw-monitorctl psql
-bw-monitorctl retention
-bw-monitorctl vacuum
-bw-monitorctl backup
-bw-monitorctl restore --from PATH --yes
+virtinfra-monitorctl psql
+virtinfra-monitorctl retention
+virtinfra-monitorctl vacuum
+virtinfra-monitorctl backup
+virtinfra-monitorctl restore --from PATH --yes
 ```
 
 Deployment:
 
 ```bash
-bw-monitorctl update
-bw-monitorctl domain status
-bw-monitorctl domain set monitor.example.com ops@example.com
-bw-monitorctl domain remove 203.0.113.10 8080
+virtinfra-monitorctl update
+virtinfra-monitorctl domain status
+virtinfra-monitorctl domain set monitor.example.com ops@example.com
+virtinfra-monitorctl domain remove 203.0.113.10 8080
 ```
 
 The `vacuum` command runs online PostgreSQL `VACUUM/ANALYZE`; it is not a file rewrite operation.

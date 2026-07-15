@@ -1,5 +1,5 @@
 [Unit]
-Description=Run BW Monitor bounded PostgreSQL retention every six hours
+Description=Run VirtInfra Monitor bounded PostgreSQL retention every six hours
 
 [Timer]
 OnCalendar=*-*-* 00,06,12,18:20:00

@@ -77,11 +77,11 @@ Redis is disabled by default and is never authoritative storage.
 ## Post-install
 
 ```bash
-bw-monitorctl status
-bw-monitorctl doctor
-bw-monitorctl db-check
-bw-monitorctl urls
-bw-monitorctl credentials
+virtinfra-monitorctl status
+virtinfra-monitorctl doctor
+virtinfra-monitorctl db-check
+virtinfra-monitorctl urls
+virtinfra-monitorctl credentials
 ```
 
 Do not expose TCP 55432. PostgreSQL is intentionally bound to loopback only.

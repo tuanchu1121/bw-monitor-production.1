@@ -43,4 +43,4 @@ find . \
 | sort -z | xargs -0 sha256sum > SHA256SUMS
 sha256sum -c SHA256SUMS >/dev/null
 
-printf '\nPASS: BW Monitor v50 release audit\n'
+printf '\nPASS: VirtInfra Monitor v50 release audit\n'

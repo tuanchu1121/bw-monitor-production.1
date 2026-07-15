@@ -9,7 +9,7 @@ def need(cond: bool, message: str) -> None:
         raise AssertionError(message)
 
 version = (ROOT / "VERSION").read_text().strip()
-need(version == "50.0.4-prod-r1-one-command", f"unexpected VERSION: {version}")
+need(version == "50.2.0-prod-r1-virtinfra-hardening", f"unexpected VERSION: {version}")
 
 app = (ROOT / "app/app.py").read_text()
 pg = (ROOT / "app/bw_pg.py").read_text()
@@ -25,8 +25,8 @@ need("CACHE_BUCKET_SECONDS = 300" in app, "monitor cadence is not 300 seconds")
 need("local 15-second network peak summaries, still one push per 5 minutes" in app.lower(), "original 15s/5m marker missing")
 need("RAW_RETENTION_DAYS = min(2" in app, "2-day raw retention missing")
 need("HOURLY_RETENTION_DAYS = min(7" in app, "7-day hourly retention missing")
-need("SAMPLE_SECONDS = max(5, int(os.environ.get(\"BW_AGENT_SAMPLE_SECONDS\", \"15\")))" in agent, "Agent 15-second sampler default missing")
-need("PUSH_SECONDS = max(60, int(os.environ.get(\"BW_AGENT_PUSH_SECONDS\", \"300\")))" in agent, "Agent 300-second push default missing")
+need("SAMPLE_SECONDS = max(5, int(os.environ.get(\"VIRTINFRA_AGENT_SAMPLE_SECONDS\") or os.environ.get(\"BW_AGENT_SAMPLE_SECONDS\", \"15\")))" in agent, "Agent 15-second sampler default missing")
+need("PUSH_SECONDS = max(60, int(os.environ.get(\"VIRTINFRA_AGENT_PUSH_SECONDS\") or os.environ.get(\"BW_AGENT_PUSH_SECONDS\", \"300\")))" in agent, "Agent 300-second push default missing")
 need("bwagent_sample_seconds: 15" in playbook and "bwagent_push_seconds: 300" in playbook, "Ansible cadence defaults missing")
 
 # PostgreSQL/TimescaleDB is the only runtime data store.
@@ -90,5 +90,17 @@ need("--public-ip" in installer and "--ip-mode" in installer, "IP installer/swit
 need("pg_dump" in (ROOT / "deploy/postgres/backup.sh").read_text(), "PostgreSQL backup missing")
 need("pg_restore" in (ROOT / "deploy/postgres/restore.sh").read_text(), "PostgreSQL restore missing")
 need("USING brin" in indexes, "compact history BRIN indexes missing")
+
+need("VirtInfra Monitor" in app, "public product identity missing")
+need("display_timezone_name" in app and "Asia/Ho_Chi_Minh" in app and '"UTC"' in app, "timezone choices missing")
+need('@app.route("/livez")' in app and '@app.route("/healthz")' in app, "health endpoints missing")
+need("pg_advisory_xact_lock" in app, "per-node PostgreSQL push lock missing")
+need("WAL reserved/recycled" in app and "SHM {human" not in app, "PostgreSQL size semantics not fixed")
+need("virtinfra-v502-final-ui" in app and "min-width:0!important" in app, "responsive Abuse override missing")
+need("page_cache_generation" in app, "cross-worker cache generation missing")
+agent_install = (ROOT / "deploy/agent/install-agent.sh").read_text(encoding="utf-8")
+need("VirtInfra Agent v13" in agent and "VirtInfra-Agent/13" in agent, "VirtInfra Agent identity missing")
+need("virtinfra-agent.service" in agent_install and "/var/lib/virtinfra-agent" in agent_install, "canonical Agent service/path missing")
+need((ROOT / "deploy/postgres/virtinfra-monitor-health-watch.timer").exists(), "health watchdog timer missing")
 
 print("PASS: v50 static product contract")

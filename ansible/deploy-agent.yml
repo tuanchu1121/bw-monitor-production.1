@@ -1,5 +1,5 @@
 ---
-- name: Deploy BW Monitor Agent v12
+- name: Deploy VirtInfra Agent v13
   hosts: all
   become: "{{ (ansible_user | default('root')) != 'root' }}"
   gather_facts: false
@@ -15,10 +15,10 @@
     bwagent_pps_warn: 200000
     bwagent_mbps_warn: 800
     bwagent_bridge_roles: "public:br0,private:br1"
-    bwagent_install_dir: /usr/local/lib/bwagent
-    bwagent_state_dir: /var/lib/bw-agent
-    bwagent_env_file: /etc/bwagent.env
-    bwagent_service_file: /etc/systemd/system/bwagent.service
+    bwagent_install_dir: /usr/local/lib/virtinfra-agent
+    bwagent_state_dir: /var/lib/virtinfra-agent
+    bwagent_env_file: /etc/virtinfra-agent.env
+    bwagent_service_file: /etc/systemd/system/virtinfra-agent.service
 
   pre_tasks:
     - name: Validate required deployment variables
@@ -51,12 +51,13 @@
       changed_when: false
 
   tasks:
-    - name: Stop old BW Agent units
+    - name: Stop old VirtInfra Agent units
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: stopped
         enabled: false
       loop:
+        - virtinfra-agent.service
         - bwagent.timer
         - bwagent.service
         - bw-agent.timer
@@ -92,12 +93,12 @@
         group: root
         mode: "0755"
         backup: true
-      notify: Restart BW Agent
+      notify: Restart VirtInfra Agent
 
     - name: Install Agent doctor helper
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../deploy/agent/doctor-agent.sh"
-        dest: /usr/local/sbin/bwagent-doctor
+        dest: /usr/local/sbin/virtinfra-agent-doctor
         owner: root
         group: root
         mode: "0755"
@@ -118,12 +119,12 @@
         group: root
         mode: "0600"
         content: |
-          BW_AGENT_API={{ bwagent_api_effective | to_json }}
-          BW_AGENT_TOKEN={{ bwagent_token | to_json }}
-          BW_AGENT_STATE={{ (bwagent_state_dir + '/state.json') | to_json }}
-          BW_AGENT_RUNTIME={{ (bwagent_state_dir + '/runtime.json') | to_json }}
-          BW_AGENT_SAMPLE_SECONDS={{ bwagent_sample_seconds | string | to_json }}
-          BW_AGENT_PUSH_SECONDS={{ bwagent_push_seconds | string | to_json }}
+          VIRTINFRA_AGENT_API={{ bwagent_api_effective | to_json }}
+          VIRTINFRA_AGENT_TOKEN={{ bwagent_token | to_json }}
+          VIRTINFRA_AGENT_STATE={{ (bwagent_state_dir + '/state.json') | to_json }}
+          VIRTINFRA_AGENT_RUNTIME={{ (bwagent_state_dir + '/runtime.json') | to_json }}
+          VIRTINFRA_AGENT_SAMPLE_SECONDS={{ bwagent_sample_seconds | string | to_json }}
+          VIRTINFRA_AGENT_PUSH_SECONDS={{ bwagent_push_seconds | string | to_json }}
           BW_AGENT_MAX_LOAD={{ bwagent_max_load | string | to_json }}
           BW_AGENT_SKIP_HEAVY_ON_OVERLOAD={{ bwagent_skip_heavy_on_overload | string | to_json }}
           BW_AGENT_PPS_WARN={{ bwagent_pps_warn | string | to_json }}
@@ -140,7 +141,7 @@
           BW_AGENT_DOMIFLIST_TIMEOUT="30"
           BW_AGENT_QUIET="0"
       no_log: true
-      notify: Restart BW Agent
+      notify: Restart VirtInfra Agent
 
     - name: Install Agent systemd service
       ansible.builtin.copy:
@@ -150,17 +151,17 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=BW Monitor Agent v10 persistent collector
+          Description=VirtInfra Agent v13 persistent infrastructure collector
           Wants=network-online.target
           After=network-online.target libvirtd.service
-          ConditionPathExists=/usr/local/lib/bwagent/agent.py
+          ConditionPathExists=/usr/local/lib/virtinfra-agent/agent.py
 
           [Service]
           Type=simple
           User=root
           Group=root
-          EnvironmentFile=/etc/bwagent.env
-          ExecStart=/usr/bin/python3 /usr/local/lib/bwagent/agent.py
+          EnvironmentFile=/etc/virtinfra-agent.env
+          ExecStart=/usr/bin/python3 /usr/local/lib/virtinfra-agent/agent.py
           Restart=always
           RestartSec=5
           Nice=10
@@ -173,7 +174,7 @@
           PrivateTmp=true
           ProtectHome=read-only
           ProtectSystem=full
-          ReadWritePaths=/var/lib/bw-agent /run
+          ReadWritePaths=/var/lib/virtinfra-agent /run
           ProtectKernelTunables=true
           ProtectKernelModules=true
           ProtectControlGroups=true
@@ -186,19 +187,19 @@
           WantedBy=multi-user.target
       notify:
         - Reload systemd
-        - Restart BW Agent
+        - Restart VirtInfra Agent
 
     - name: Flush service handlers
       ansible.builtin.meta: flush_handlers
 
     - name: Enable and start Agent
       ansible.builtin.systemd:
-        name: bwagent.service
+        name: virtinfra-agent.service
         enabled: true
         state: started
 
     - name: Verify Agent remains active
-      ansible.builtin.command: systemctl is-active bwagent.service
+      ansible.builtin.command: systemctl is-active virtinfra-agent.service
       register: bwagent_active
       retries: 10
       delay: 2
@@ -208,18 +209,18 @@
     - name: Show deployment result
       ansible.builtin.debug:
         msg:
-          - "{{ inventory_hostname }}: bwagent.service={{ bwagent_active.stdout }}"
+          - "{{ inventory_hostname }}: virtinfra-agent.service={{ bwagent_active.stdout }}"
           - "Sample={{ bwagent_sample_seconds }}s; push={{ bwagent_push_seconds }}s"
-          - "Logs: journalctl -u bwagent.service -n 50 --no-pager"
+          - "Logs: journalctl -u virtinfra-agent.service -n 50 --no-pager"
 
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Restart BW Agent
+    - name: Restart VirtInfra Agent
       ansible.builtin.systemd:
-        name: bwagent.service
+        name: virtinfra-agent.service
         enabled: true
         state: restarted
         daemon_reload: true

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Automatic bounded-retention runner for BW Monitor v50 PostgreSQL Native.
+"""Automatic bounded-retention runner for VirtInfra Monitor v50 PostgreSQL Native.
 
-This service is started by bw-monitor-retention.timer.  It shares the same
+This VirtInfra Monitor service is started by bw-monitor-retention.timer.  It shares the same
 non-blocking global lock as manual maintenance, skips when a queued/running
 manual job exists, and never VACUUMs the database.
 """
@@ -71,7 +71,7 @@ def main() -> int:
         result = module.run_retention(dry_run=False)
         print(json.dumps({
             "ok": True,
-            "version": "50.0.4-prod-r1-one-command",
+            "version": "50.2.0-prod-r1-virtinfra-hardening",
             "started_at": started,
             "finished_at": int(time.time()),
             "result": result,

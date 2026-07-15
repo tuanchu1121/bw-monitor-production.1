@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live PostgreSQL integration test for the full BW Monitor application.
+"""Live PostgreSQL integration test for the full VirtInfra Monitor application.
 
 Set BW_TEST_DATABASE_URL to a disposable database. The test drops/recreates the
 public and bw_meta schemas in that database.
@@ -131,7 +131,7 @@ payload = {
     },
     "physical_interfaces": [],
     "bridge_addresses": [{"role": "public", "bridge": "br0", "ipv4": ["203.0.113.50/24"], "primary_ipv4": "203.0.113.50"}],
-    "agent_health": {"version": 12, "duration_ms": 420, "counts": {"vms": 1, "interfaces": 1}, "timings": {}},
+    "agent_health": {"version": 13, "duration_ms": 420, "counts": {"vms": 1, "interfaces": 1}, "timings": {}},
 }
 
 client = module.app.test_client()
