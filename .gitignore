@@ -19,3 +19,9 @@ monitor-vars.yml
 *.zip
 dist/
 .testvenv*/
+
+# Local Ansible inventories and host lists
+ansible/*.txt
+ansible/inventory*.ini
+ansible/production*.ini
+!ansible/inventory.example.ini

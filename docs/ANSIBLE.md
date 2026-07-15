@@ -1,81 +1,59 @@
-# Ansible Deployment
+# Ansible deployment
 
-## Inventory
+## Agent fleet
 
-```bash
-cp ansible/inventory.example.ini ansible/inventory.ini
-nano ansible/inventory.ini
-```
+The Ansible control server can be completely separate from the Monitor.
 
-Example:
+Example inventory:
 
 ```ini
-[kvm_nodes]
-192.0.2.11 ansible_port=22
-192.0.2.12 ansible_port=1812
+[agents]
+192.0.2.10 ansible_port=22
+192.0.2.11 ansible_port=1812
 
-[kvm_nodes:vars]
+[agents:vars]
 ansible_user=root
+ansible_python_interpreter=/usr/bin/python3
 ```
 
-## Deploy Agent
+Test SSH:
 
 ```bash
+ansible all -i ansible/test.txt -m ping --forks 20
+```
+
+Deploy/update Agent:
+
+```bash
+read -rsp 'Nhập BW Agent token: ' BW_TOKEN
+echo
+
 bash ansible/deploy-agent.sh \
-  -i ansible/inventory.ini \
-  --api 'https://monitor.example.com/push' \
-  --token 'PASTE_THE_MONITOR_PUSH_TOKEN' \
-  --forks 20 \
-  --serial 10
+-i ansible/test.txt \
+--api 'https://monitor.example.com/push' \
+--token "$BW_TOKEN" \
+--forks 20 \
+--serial 10
+
+unset BW_TOKEN
 ```
 
-The wrapper writes secrets to a temporary mode-0600 extra-vars file and deletes it on exit. Ansible tasks carrying the token use `no_log: true`.
-
-## Limit hosts
+Deploy one group or node:
 
 ```bash
-bash ansible/deploy-agent.sh \
-  -i ansible/inventory.ini \
-  --api 'https://monitor.example.com/push' \
-  --token 'PASTE_THE_MONITOR_PUSH_TOKEN' \
-  --limit 'EPYC_SG'
+... --limit 'EPYC_SG'
 ```
 
-## Remove Agents
+When `ansible_user=root`, the playbook does not invoke `sudo`. For a non-root SSH user, install/configure sudo and privilege escalation.
 
-```bash
-bash ansible/remove-agent.sh \
-  -i ansible/inventory.ini \
-  --forks 20
-```
+## Monitor through Ansible
 
-Preserve Agent state by passing the playbook variable:
+Create an inventory group `[monitors]`, copy `ansible/monitor-vars.example.yml`, encrypt the real vars with Ansible Vault, then:
 
 ```bash
 ansible-playbook \
-  -i ansible/inventory.ini \
-  ansible/remove-agent.yml \
-  -e bwagent_keep_state=true
+-i ansible/monitor-inventory.ini \
+ansible/deploy-monitor.yml \
+-e @ansible/monitor-vars.yml \
+--ask-vault-pass
 ```
-
-## Deploy a Monitor through Ansible
-
-Copy and edit variables:
-
-```bash
-cp ansible/monitor-vars.example.yml ansible/monitor-vars.yml
-nano ansible/monitor-vars.yml
-```
-
-Use Ansible Vault for the Admin password and Monitor token:
-
-```bash
-ansible-vault encrypt ansible/monitor-vars.yml
-ansible-playbook \
-  -i ansible/inventory.ini \
-  ansible/deploy-monitor.yml \
-  -e @ansible/monitor-vars.yml \
-  --ask-vault-pass
-```
-
-The Monitor playbook copies the exact release and deployment code to the target, runs the production installer, and verifies the Monitor service and retention timer.

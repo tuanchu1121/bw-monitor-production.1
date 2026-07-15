@@ -1,503 +1,246 @@
-# BW Monitor v49 Enterprise Timescale Edition
+# BW Monitor v50 PostgreSQL Native
 
-BW Monitor is a production-oriented monitoring stack for KVM/libvirt nodes and their virtual machines. It combines a persistent node Agent, a Flask/Gunicorn Monitor, SQLite WAL storage, bounded retention, scoped REST APIs, an Abuse Engine, an operations dashboard, and safe maintenance tooling.
+Production monitoring for KVM/libvirt nodes and virtual machines. This repository keeps the complete v48/v49 dashboard, Abuse Engine, storage views, Admin tools, REST API and Agent protocol, while replacing the runtime data store with one PostgreSQL 17 + TimescaleDB database.
 
-This repository contains the complete deployment source for **49.0.0-prod-r1-enterprise-timescale**, built on and preserving the v48.12.9-r4 operational UI and all v48.13.x storage features. It is designed for Debian 12+ and Ubuntu 22.04+ servers using systemd.
-
-> This is proprietary software. See [LICENSE](LICENSE). Do not publish credentials, database files, API keys, or production-specific secrets.
-
-
-
-## v49 complete architecture upgrade
-
-Version **49.0.0-prod-r1-enterprise-timescale** adds PostgreSQL 17 + TimescaleDB, Redis Streams, an atomic local outbox, asynchronous ingestion, resumable SQLite migration, 5-minute/1-hour continuous aggregates, exact Enterprise purge synchronization, dual-database backups and new analytical APIs. The existing operational UI and SQLite control plane remain available as the compatibility/fallback path.
-
-Complete in-place installation or upgrade:
-
-```bash
-unset HISTFILE
-
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-enterprise.sh \
-| bash -s -- \
---public-ip 45.92.158.124
-```
-
-Current state is migrated before the installer returns. Historical migration continues in the background by default. No Agent reinstall is required.
-
-See [docs/ENTERPRISE.md](docs/ENTERPRISE.md) for architecture, migration, backups, status, rollback and API details.
-
-### Active swap visibility and Top VM slot sorting (48.13.9-r2)
-
-- Node Filesystems and Storage Node include active swap devices from `/proc/swaps`.
-- Top VM now includes `SLOTS` beside `ALLOC · ASSIGNED · %` for customer-disk count sorting.
-- All other UI, policy, retention and cleanup behavior is unchanged.
-
-- `Current VM Abuse` adds a compact `Host Allocated / Assigned` meter across customer disks.
-- Abuse capacity can be sorted independently by `ALLOC`, `ASSIGNED`, `%`, or `SLOTS`.
-- `VM Disks` All view is one strong card per UUID with clear `Overall`, `Performance`, and separated `vda/vdb/vdc` sections plus `View details`.
-- `Storage Node` mirrors the same hierarchy with overall node storage, performance, and separated real filesystem roots.
-- Filtered per-storage forensic tables, Agent collection, retention, purge behavior, Dashboard, Top VM, Node Health, and policy logic are unchanged.
-
-### UUID-first Storage cards and Top VM-style controls (48.13.8-r1)
-
-- `VM Disks` now treats the VM UUID as the primary identity; node and IPv4 are compact supporting metadata, matching the operational hierarchy used by the Abuse page.
-- Storage lookback, search, row limit and custom snapshot controls use the same workflow and visual structure as Top VM.
-- `Allocated / Assigned` meters are explicitly loaded and color-coded on both VM totals and every nested virtual disk.
-- Retained Storage history, grouped UUID cards, per-mount forensic mode and bounded retention remain unchanged.
-
-### Retained Storage snapshots and compact cards (48.13.7-r1)
-
-- `Storage I/O` now has the same exact-time picker used by Dashboard, Top VM, Node and VM pages.
-- `5m` is the fast live/current path; `10m` through `7d` open a real retained storage point at that age.
-- Per-node Storage payloads are compressed into the existing `node_push_snapshots` rows, so they inherit the bounded 2-day raw / 7-day hourly retention policy without a huge per-disk history table.
-- `VM Disks` All view is rendered as one readable VM card with every customer disk inside; `Storage Node` All view is one node card with every real filesystem inside. Selecting a mount keeps the direct one-disk-per-row or one-mount-per-row forensic view.
-- The storage dropdown de-duplicates `/`, `/boot`, `/home`, `/home2`, and other mounts across nodes.
-- Default page size is 30 and Storage Node VM/disk counts are batched in one query, removing the previous N+1 query pattern.
-- Purging a UUID also scrubs that UUID from retained compressed Storage snapshots on its affected nodes.
-
-## High Performance Edition (48.14.0)
-
-This release keeps the existing Flask/SQLite deployment model and adds a high-performance data path for large installations without changing the dashboard workflow.
-
-- Redis hot cache for repeated Dashboard, Top VM, VM Abuse, Storage I/O, Node and VM-detail page reads.
-- Process-local LRU fallback when Redis is unavailable.
-- Materialized current summaries for VM disk capacity/I/O and node storage mounts.
-- SQL-side pagination for grouped Storage I/O cards, with child rows loaded only for the visible page.
-- Tuned SQLite WAL connections with memory mapping, a larger page cache, in-memory temporary work and cached statements.
-- Gunicorn preload and four threads per worker by default.
-- RAM-aware SQLite cache/mmap defaults, with existing custom values preserved during updates.
-- The production installer runs the full regression suite once, then reuses that result during the file-install phase.
-- Direct gzip compression and browser off-screen rendering containment.
-- `Server-Timing`, `X-BW-App-Time-Ms` and `X-BW-Performance` response headers.
-- Authenticated `/api/v1/performance` health endpoint.
-
-Redis is installed and enabled automatically by the production installer. Use `--no-redis` only when the host cannot run Redis; the application will continue with a bounded process-local cache. Redis is a cache only, never the source of truth.
-
-Update an existing monitor while keeping the database and credentials:
-
-```bash
-unset HISTFILE
-
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
-| bash -s -- \
---backup-db
-```
-
-Verify the performance layer after the update:
-
-```bash
-cat /opt/bw-monitor/DEPLOY_VERSION
-redis-cli ping
-systemctl status redis-server --no-pager -l
-grep -E 'BW_REDIS|BW_PAGE_CACHE|BW_SQLITE|BW_GUNICORN_PRELOAD' /etc/default/bw-monitor
-```
-
-Run the bundled synthetic query benchmark from a repository checkout:
-
-```bash
-python3 tools/benchmark-performance.py --vms 50000 --disks-per-vm 2 --queries 200
-```
-
-The benchmark is a local query microbenchmark, not a promise of end-to-end production latency. Real performance also depends on database size, storage latency, active users and browser rendering.
-
+> Release: `50.0.0-prod-r1-postgres-native`
 
 ## Architecture
 
 ```text
-KVM/libvirt nodes
+KVM/libvirt node
   └─ bwagent.service
-       ├─ samples VM/network state locally every 15 seconds
-       ├─ aggregates VM CPU, RAM, disk, network and node health
-       └─ pushes a durable payload every 300 seconds
-                  │
-                  ▼
-       HTTP IP:port or HTTPS domain
-                  │
-                  ▼
-        Nginx → Gunicorn → Flask
-                  │
-                  ▼
-  SQLite WAL + current caches + Abuse Engine
-                  │
-                  ├─ Dashboard / Admin
-                  ├─ Scoped REST API v1
-                  ├─ single-worker maintenance
-                  └─ bounded retention timer
+       ├─ samples local counters every 15 seconds
+       ├─ builds one durable 5-minute payload
+       └─ POST /push every 300 seconds
+                    │
+                    ▼
+         Nginx :443 or public IP:8080
+                    │
+                    ▼
+            Gunicorn + Flask
+                    │
+                    ▼
+      PostgreSQL 17 + TimescaleDB
+      single source of truth, loopback only
 ```
 
-Default retention policy:
+Runtime data is not split between databases. PostgreSQL stores users, settings, inventory, current metrics, Abuse state/events, storage data and history. TimescaleDB is an extension inside the same PostgreSQL database and is used for time-series history. Redis is optional page cache only, disabled by default, and never stores authoritative data.
 
-```text
-0 → 48 hours     keep every real 5-minute push
-48 hours → 7 days keep one real synchronized snapshot per hour
-> 7 days          delete historical metrics/logs/events
-```
+## Exact sampling and retention
 
-Current state, inventory, users, API keys, Allowed IP/CIDR rules, current Abuse state, and application settings are not removed by historical retention.
+The Agent behavior is unchanged:
 
-## Repository layout
+- local sampling: every **15 seconds**;
+- durable Monitor push: every **300 seconds / 5 minutes**;
+- duplicate retry protection: `node + push_time`;
+- latest 48 hours: retain every real 5-minute push;
+- 48 hours to 7 days: retain one real synchronized push per hour;
+- older than 7 days: delete bounded history/log/event data;
+- current inventory, users, settings, API keys and active state are not removed by history retention.
 
-```text
-install.sh                     one-command Monitor installer
-update.sh                      one-command in-place update
-uninstall.sh                   safe Monitor removal
-install-agent.sh               one-command Agent install/update
-uninstall-agent.sh             Agent removal
-doctor.sh                      fast deployed-Monitor health check
-audit.sh                       deep production audit
-db-check.sh                    read-only SQLite health check
-backup.sh                      consistent SQLite/config backup
-restore.sh                     guarded backup restore
-collect-diagnostics.sh         sanitized support bundle
-publish-github.sh              validate, push and optionally create a release
+## Features preserved
 
-release/                       exact v48.12.9-r4 application release and tests
-deploy/monitor/                Monitor systemd/Nginx/operations tooling
-deploy/agent/                  Agent service, installer and doctor
-ansible/                       Agent and Monitor playbooks
-docs/                          English operations documentation
-.github/workflows/             CI and release validation
-```
+- Login, viewer/admin roles and account logs
+- Dashboard, Top VM, Node Health, Node Detail and VM Detail
+- VM CPU, RAM, network Mbps/PPS, drops/errors and sample quality
+- Per-VM disk capacity, allocation, physical size, throughput and IOPS
+- Node storage `/`, `/home`, `/home2`, `/home3`, swap, filesystem capacity and I/O
+- Current Abuse, Abuse Events, dynamic CPU/network/disk policies
+- UUID-first Storage I/O views, search, filters, sort and pagination
+- Admin node/VM management, queued destructive jobs and exact UUID purge
+- Scoped REST API keys, Allowed IP/CIDR and rate limits
+- Dark/light UI and existing route compatibility
+- Agent deployment through one-command installer or Ansible
 
-## Quick start: new Monitor by public IP
+## New server, public IP
 
-On a minimal Debian/Ubuntu server, use this complete bootstrap command. It installs `curl` first, then deploys BW Monitor:
+Supported hosts: Debian 12+ and Ubuntu 22.04+ with systemd. Run as root:
 
 ```bash
-sudo apt-get update \
-&& sudo apt-get install -y curl ca-certificates \
-&& curl -fsSL \
+apt-get update
+apt-get install -y curl ca-certificates tar
+
+curl -fsSL \
 https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
-| sudo bash -s -- \
-  --public-ip 203.0.113.10 \
-  --port 8080 \
-  --run-retention-now
+| bash -s -- \
+--public-ip 203.0.113.10 \
+--port 8080
 ```
 
-The installer generates a strong Admin password and Agent push token when they are not supplied. The credential file is written **before** service health verification, so credentials remain available even when a later Nginx, TLS or application readiness check fails. Root-only credentials are written to:
+Open:
+
+```text
+http://203.0.113.10:8080
+```
+
+Credentials are written with root-only permissions to:
 
 ```text
 /root/bw-monitor-credentials.env
 ```
 
-Show them:
+Show URLs and credentials:
 
 ```bash
-sudo cat /root/bw-monitor-credentials.env
+bw-monitorctl urls
+bw-monitorctl credentials
 ```
 
-IP mode exposes Gunicorn on the selected port and uses HTTP. Use a domain with HTTPS for Internet-facing production deployments whenever possible.
+## New server, domain + HTTPS
 
-## Quick start: new Monitor by domain and HTTPS
-
-Before running this command:
+Before installation:
 
 1. Point the domain A/AAAA record to the Monitor server.
 2. Allow inbound TCP 80 and 443.
-3. Ensure no other web server is occupying the requested Nginx site.
+3. Make sure the domain resolves publicly.
 
 ```bash
-sudo apt-get update \
-&& sudo apt-get install -y curl ca-certificates \
-&& curl -fsSL \
+curl -fsSL \
 https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
-| sudo bash -s -- \
-  --domain monitor.example.com \
-  --email ops@example.com \
-  --run-retention-now
+| bash -s -- \
+--domain monitor.example.com \
+--email ops@example.com
 ```
 
-Domain mode automatically installs Nginx and Certbot, binds Gunicorn to loopback, enables trusted-proxy handling only for local Nginx, enables secure cookies after certificate issuance, and verifies public HTTPS.
+The installer configures Nginx, obtains a Let's Encrypt certificate with Certbot, redirects HTTP to HTTPS, binds Gunicorn to loopback and prints the dashboard/Admin/Agent URLs.
 
-Resulting endpoints:
-
-```text
-Dashboard:  https://monitor.example.com/
-Admin:      https://monitor.example.com/admin
-Agent push: https://monitor.example.com/push
-```
-
-## Install or update an Agent on one KVM node
-
-Use the push URL and token printed by the Monitor installer:
+## Deploy Agent from a separate Ansible server
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
-| sudo env \
-  BW_AGENT_API='https://monitor.example.com/push' \
-  BW_AGENT_TOKEN='PASTE_THE_MONITOR_PUSH_TOKEN' \
-  bash
-```
+cd /.data/agent
+git pull --ff-only
 
-For an IP Monitor:
+read -rsp 'Enter BW Agent token: ' BW_TOKEN
+echo
 
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
-| sudo env \
-  BW_AGENT_API='http://203.0.113.10:8080/push' \
-  BW_AGENT_TOKEN='PASTE_THE_MONITOR_PUSH_TOKEN' \
-  bash
-```
-
-Running the same command again updates the Agent while preserving counters and durable pending state. Use `--reset-state` only when an intentional counter reset is required.
-
-Agent checks:
-
-```bash
-systemctl status bwagent.service --no-pager -l
-journalctl -u bwagent.service -n 100 --no-pager
-bwagent-doctor
-```
-
-## Deploy Agents with Ansible
-
-Clone the repository on the Ansible controller:
-
-```bash
-git clone https://github.com/tuanchu1121/bw-monitor-production.1.git
-cd bw-monitor
-cp ansible/inventory.example.ini ansible/inventory.ini
-nano ansible/inventory.ini
-```
-
-Deploy in bounded batches:
-
-```bash
 bash ansible/deploy-agent.sh \
-  -i ansible/inventory.ini \
+  -i ansible/test.txt \
   --api 'https://monitor.example.com/push' \
-  --token 'PASTE_THE_MONITOR_PUSH_TOKEN' \
+  --token "$BW_TOKEN" \
   --forks 20 \
   --serial 10
+
+unset BW_TOKEN
 ```
 
-Limit a deployment:
+The playbook uses no `sudo` when `ansible_user=root`, keeps `ProtectHome=read-only`, and deploys the exact 15-second sampler / 300-second push defaults.
+
+## Operations
 
 ```bash
-bash ansible/deploy-agent.sh \
-  -i ansible/inventory.ini \
-  --api 'https://monitor.example.com/push' \
-  --token 'PASTE_THE_MONITOR_PUSH_TOKEN' \
-  --limit 'EPYC_SG'
+bw-monitorctl status
+bw-monitorctl doctor
+bw-monitorctl db-check
+bw-monitorctl logs all 200
+bw-monitorctl follow monitor
+bw-monitorctl backup
+bw-monitorctl retention
+bw-monitorctl psql
+bw-monitorctl update
 ```
 
-Use Ansible Vault or an external secret store for production tokens. Do not commit plaintext tokens to inventory files.
+Switch an existing IP deployment to domain HTTPS:
 
-## Update the Monitor
+```bash
+bw-monitorctl domain set monitor.example.com ops@example.com
+```
 
-The update path preserves the database, Agent token, Admin users, API keys, Allowed IP rules, domain settings, and current state:
+Switch back to IP mode:
+
+```bash
+bw-monitorctl domain remove 203.0.113.10 8080
+```
+
+## Update
 
 ```bash
 curl -fsSL \
 https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
-| sudo bash
+| bash
 ```
 
-Create a consistent full database backup during update:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh \
-| sudo bash -s -- --backup-db
-```
-
-Check free disk first when the database is large:
-
-```bash
-df -h /opt/bw-monitor
-ls -lh /opt/bw-monitor/bandwidth.db*
-```
-
-## Operations and self-audit
-
-Fast health check:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/doctor.sh \
-| sudo bash
-```
-
-Deep production audit:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
-| sudo bash
-```
-
-Audit including every bundled regression suite:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
-| sudo bash -s -- --full-preflight
-```
-
-Read-only SQLite quick check:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/db-check.sh \
-| sudo bash -s -- --timeout 120
-```
-
-Deep SQLite integrity check during a maintenance window:
-
-```bash
-sudo /opt/bw-monitor/db-check.sh --full --timeout 3600
-```
-
-The database checker never runs `VACUUM`, never migrates, never deletes rows, and opens the database read-only.
+The update keeps the PostgreSQL volume, credentials, token, settings, domain/TLS configuration and current data.
 
 ## Backup and restore
 
-Create a consistent SQLite backup plus protected configuration:
-
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/backup.sh \
-| sudo bash
+bw-monitorctl backup
 ```
 
 Backups are stored under:
 
 ```text
-/var/backups/bw-monitor/YYYYmmdd-HHMMSS/
+/var/backups/bw-monitor/YYYYMMDD-HHMMSS/
 ```
 
-Restore:
+Restore data:
 
 ```bash
-sudo /opt/bw-monitor/restore.sh \
-  --from /var/backups/bw-monitor/20260712-010203
+bw-monitorctl restore \
+  --from /var/backups/bw-monitor/20260715-050000 \
+  --yes
 ```
 
-The restore tool validates the backup with `PRAGMA quick_check`, backs up the current deployment again, stops services only for the final database swap, removes stale WAL/SHM files, and restarts/validates the service.
-
-## Sanitized diagnostics bundle
+Restore data and protected configuration:
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/collect-diagnostics.sh \
-| sudo bash
+bw-monitorctl restore \
+  --from /var/backups/bw-monitor/20260715-050000 \
+  --with-config \
+  --yes
 ```
 
-The generated archive contains service status, recent logs, configuration with secrets redacted, source hashes/markers, Nginx output, disk information, and database metadata/counts. It does not include the database or plaintext secret values. Review the archive before sharing it.
+## Repository layout
 
-## Uninstall
+```text
+app/                         full Flask UI/business logic + PostgreSQL adapter
+postgres/                    Compose and TimescaleDB SQL
+postgres/sql/                bootstrap, hypertables and production indexes
+deploy/postgres/             installer, service, backup/restore, doctor and CLI
+deploy/agent/                complete Agent source and service installer
+ansible/                     Monitor and Agent deployment playbooks
+tests/                       static product contract and live PostgreSQL test
+tools/                       release audit, installer test and archive builder
+docs/                        operator and developer documentation
+install.sh                   GitHub/new-server bootstrap
+update.sh                    in-place update
+```
 
-Safe Monitor uninstall, with an automatic restorable backup:
+## Validation
+
+Static/source validation:
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
-| sudo bash -s -- --yes
+./preflight.sh
 ```
 
-Permanent data purge, no uninstall backup:
+Live integration requires a disposable PostgreSQL database:
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
-| sudo bash -s -- --purge-data --yes
+BW_TEST_DATABASE_URL='postgresql://user:pass@127.0.0.1:5432/bw_monitor_test' \
+./preflight.sh --use-current-python
 ```
 
-Remove an Agent and its state:
+Release audit and archives:
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
-| sudo bash
+./tools/release-audit.sh
+./tools/build-dist.sh
 ```
-
-Preserve Agent counter/state files:
-
-```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
-| sudo bash -s -- --keep-state
-```
-
-## Publish this repository to GitHub
-
-This source tree contains no production database or real credentials. To create or update `tuanchu1121/bw-monitor-production.1` from a machine authenticated with GitHub CLI:
-
-```bash
-gh auth login
-./publish-github.sh \
-  --repo tuanchu1121/bw-monitor-production.1 \
-  --public \
-  --release
-```
-
-The publish helper runs local syntax, checksum, YAML and full release preflight checks before committing. It pushes `main`, creates tag `v48.13.9-prod-r1`, and can create/update a GitHub Release with production source archives.
-
-For manual GitHub Web upload, create a repository named `bw-monitor`, then upload **the contents of this directory**, not the outer directory itself. The root of the GitHub repository must contain `install.sh`, `README.md`, `release/`, `deploy/`, and `ansible/`.
 
 ## Documentation
 
-- [Publishing to GitHub](docs/PUBLISHING.md)
-- [Installation and configuration](docs/INSTALL.md)
-- [Domain and HTTPS deployment](docs/DOMAIN.md)
-- [Agent deployment](docs/AGENT.md)
-- [Ansible deployment](docs/ANSIBLE.md)
-- [Operations](docs/OPERATIONS.md)
-- [Database design and checks](docs/DATABASE.md)
-- [Performance architecture and tuning](docs/PERFORMANCE.md)
-- [Audit and diagnostics](docs/AUDIT.md)
+- [Vietnamese full guide](docs/README_VI.md)
+- [Installation](docs/INSTALL.md)
+- [Domain and HTTPS](docs/DOMAIN.md)
+- [Management CLI](docs/MANAGEMENT.md)
+- [Database and performance](docs/DATABASE.md)
+- [Backup and restore](docs/BACKUP_RESTORE.md)
+- [Agent](docs/AGENT.md)
+- [Ansible](docs/ANSIBLE.md)
+- [Upgrade](docs/UPGRADE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Code guide and architecture](docs/CODE_GUIDE.md)
-- [REST API overview](docs/API.md)
-- [Quick command reference](docs/QUICK_COMMANDS.md)
-- [Security policy](SECURITY.md)
-
-## Production notes
-
-- Keep `/etc/default/bw-monitor`, `/root/bw-monitor-credentials.env`, `/etc/bwagent.env`, database files, API secrets, and decrypted Ansible secret files out of Git.
-- Use HTTPS domain mode for Internet-facing Monitor installations.
-- Do not expose the Gunicorn loopback port when Nginx domain mode is enabled.
-- Keep Agent `/push` tokens separate from scoped REST API keys.
-- Review disk growth and retention health regularly.
-- Do not run `VACUUM` automatically on a large live database. Use the guarded Admin maintenance action during a planned window only.
-
-
-
-
-### Grouped Storage I/O and working disk sorting (48.13.6-r1)
-
-- Top VM `ALLOC`, `ASSIGNED`, and `%` links now survive sort sanitization and perform real total-per-VM disk sorting.
-- VM Disks All view groups every customer disk under one node/UUID row; selecting a storage mount switches to one-disk-per-row troubleshooting.
-- Storage Node All view groups `/`, `/home`, `/home2`, and other real filesystems under one node row; selecting a mount switches to detailed matching rows.
-- Agent service uses `ProtectHome=read-only`, so hardened systemd collection can read a separate `/home` filesystem and map VM images stored there.
-
-### VM disk panel cleanup (48.13.5-r2)
-
-- Top VM retains the total `ALLOCATED / ASSIGNED` capacity meter with independent `ALLOC`, `ASSIGNED`, and `%` sorting.
-- VM Overview retains one compact total VM Disk capacity card.
-- `Virtual Disk I/O` contains only one clean panel per customer disk and no repeated total strip.
-
-### Filesystem-root and capacity-bar fixes (48.13.5)
-
-- Agent v12 merges `df -P` and `findmnt` instead of treating either command as all-or-nothing. This keeps a separate LVM `/home` visible on AlmaLinux nodes.
-- Only real filesystem roots are shown. Service-sandbox aliases such as `/etc`, `/usr`, `/tmp`, `/var/lib/bw-agent`, and `/var/tmp` are collapsed into `/`.
-- Top VM and VM Overview use RAM-style Allocated / Assigned capacity bars.
-- VM detail and Storage I/O keep every customer disk separate with Read/Write and IOPS.
-
-### Storage precision fixes (48.13.4)
-
-This release preserves the original v48.12.9-r4 operational pages and integrates disk visibility into the existing workflow:
-
-- **Top VM** keeps one VM per row and adds a compact total disk meter between RAM and Disk R/s. The meter shows Host Allocated / Assigned across customer disks and can sort by Allocated, Assigned, Allocated %, or disk count.
-- **VM Detail** shows per-disk allocated/assigned capacity in Overview and a Virtual Disk I/O section before the charts with source path, mount, device, Read/Write and IOPS.
-- **Storage I/O → VM Disks** has a prominent search field, node/IP and UUID copy controls, and renders one customer disk per row, while keeping node/IP and UUID visible on every row.
-- **Storage I/O → Storage Node** reports every discovered storage mount, including separate `/home`, `/home2`, LVM and device-mapper mounts, with capacity and physical I/O metrics.
-- **Exact UUID purge** removes the selected UUID from current caches, retained VM history, Current Abuse, Abuse Events, Top VM, Dashboard and disk-current data without clearing unrelated VMs.
-
-This release also prevents maintenance-worker imports from clearing unrelated Current Abuse rows, adds Active/Hidden/Stale filters to Admin inventory, and overlays current per-mount I/O onto retained Node Filesystem capacity rows.
-
-Agent v11 uses one bulk `virsh domstats --list-active --vcpu --balloon --block` call for per-VM disk counters and `findmnt --real` for robust host filesystem discovery. Reinstall/update the Agent after deploying this release so separate mounts such as a 200 TB `/home` are reported correctly.
+- [Publishing to GitHub](docs/PUBLISHING.md)
+- [API](docs/API.md)
+- [Code guide](docs/CODE_GUIDE.md)
+- [Security](SECURITY.md)

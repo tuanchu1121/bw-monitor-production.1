@@ -1,7 +1,7 @@
 ---
-- name: Deploy BW Monitor production server
+- name: Deploy BW Monitor v50 PostgreSQL Native
   hosts: monitors
-  become: true
+  become: "{{ (ansible_user | default('root')) != 'root' }}"
   gather_facts: false
 
   vars:
@@ -13,58 +13,52 @@
     bw_monitor_admin_password: ""
     bw_monitor_token: ""
     bw_monitor_timezone: Asia/Ho_Chi_Minh
-    bw_monitor_backup_db: false
-    bw_monitor_recover_stuck: true
+    bw_monitor_firewall: false
+    bw_monitor_ssh_port: ""
+    bw_monitor_redis_cache: false
     bw_monitor_run_retention_now: false
 
   pre_tasks:
-    - name: Validate monitor deployment variables
+    - name: Validate Monitor variables
       ansible.builtin.assert:
         that:
           - bw_monitor_admin_password | length >= 12
           - (bw_monitor_domain | length == 0) or (bw_monitor_email | length > 3)
+          - (bw_monitor_domain | length > 0) or (bw_monitor_public_ip | length > 0)
         fail_msg: >-
-          Set bw_monitor_admin_password to at least 12 characters. When using
-          bw_monitor_domain, also set bw_monitor_email.
+          Set a 12+ character Admin password. Set domain+email or public IP.
       no_log: true
 
   tasks:
-    - name: Create temporary deployment directory
-      ansible.builtin.file:
-        path: /root/bw-monitor-deploy
+    - name: Create temporary source directory
+      ansible.builtin.tempfile:
         state: directory
-        owner: root
-        group: root
-        mode: "0700"
+        prefix: bw-monitor-v50-
+      register: bw_monitor_tmp
 
-    - name: Copy production deployment files
+    - name: Copy complete repository source
       ansible.builtin.copy:
-        src: "{{ item.src }}"
-        dest: "{{ item.dest }}"
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ bw_monitor_tmp.path }}/"
         owner: root
         group: root
         mode: preserve
-      loop:
-        - { src: "{{ playbook_dir }}/../release/", dest: /root/bw-monitor-deploy/release/ }
-        - { src: "{{ playbook_dir }}/../deploy/monitor/", dest: /root/bw-monitor-deploy/deploy/monitor/ }
-        - { src: "{{ playbook_dir }}/../requirements.txt", dest: /root/bw-monitor-deploy/requirements.txt }
-        - { src: "{{ playbook_dir }}/../VERSION", dest: /root/bw-monitor-deploy/VERSION }
 
-    - name: Build installer argument list
+    - name: Build installer arguments
       ansible.builtin.set_fact:
         bw_monitor_install_args: >-
           --port {{ bw_monitor_port }}
           --admin-user {{ bw_monitor_admin_user | quote }}
           --timezone {{ bw_monitor_timezone | quote }}
           {{ ('--domain ' + (bw_monitor_domain | quote) + ' --email ' + (bw_monitor_email | quote)) if (bw_monitor_domain | length > 0) else ('--public-ip ' + (bw_monitor_public_ip | quote)) }}
-          {{ '--backup-db' if bw_monitor_backup_db | bool else '' }}
-          {{ '--recover-stuck' if bw_monitor_recover_stuck | bool else '' }}
+          {{ '--redis-cache' if bw_monitor_redis_cache | bool else '' }}
           {{ '--run-retention-now' if bw_monitor_run_retention_now | bool else '' }}
+          {{ '--firewall' if bw_monitor_firewall | bool else '' }}
+          {{ ('--ssh-port ' + (bw_monitor_ssh_port | string | quote)) if (bw_monitor_ssh_port | string | length > 0) else '' }}
 
-    - name: Run production monitor installer
+    - name: Run PostgreSQL Native installer
       ansible.builtin.shell: >-
-        /root/bw-monitor-deploy/deploy/monitor/install-monitor.sh
-        {{ bw_monitor_install_args }}
+        bash {{ bw_monitor_tmp.path }}/install.sh {{ bw_monitor_install_args }}
       args:
         executable: /bin/bash
       environment:
@@ -72,21 +66,19 @@
         BW_MONITOR_TOKEN: "{{ bw_monitor_token }}"
       no_log: true
 
-    - name: Verify Monitor service
-      ansible.builtin.command: systemctl is-active bw-monitor.service
-      register: monitor_active
+    - name: Verify Monitor with management doctor
+      ansible.builtin.command: bw-monitorctl doctor
+      register: bw_monitor_doctor
       changed_when: false
-      failed_when: monitor_active.stdout != 'active'
 
-    - name: Verify retention timer
-      ansible.builtin.command: systemctl is-active bw-monitor-retention.timer
-      register: retention_active
-      changed_when: false
-      failed_when: retention_active.stdout != 'active'
-
-    - name: Show monitor status
+    - name: Show deployment result
       ansible.builtin.debug:
         msg:
-          - "bw-monitor.service={{ monitor_active.stdout }}"
-          - "bw-monitor-retention.timer={{ retention_active.stdout }}"
+          - "BW Monitor v50 deployed"
           - "Credentials: /root/bw-monitor-credentials.env"
+          - "{{ bw_monitor_doctor.stdout_lines | default([]) }}"
+
+    - name: Remove temporary source directory
+      ansible.builtin.file:
+        path: "{{ bw_monitor_tmp.path }}"
+        state: absent

@@ -1,4 +1,4 @@
-name: BW Monitor CI
+name: BW Monitor v50 CI
 
 on:
   push:
@@ -12,12 +12,25 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    services:
+      timescaledb:
+        image: timescale/timescaledb:2.27.2-pg17-oss
+        env:
+          POSTGRES_DB: bw_monitor_test
+          POSTGRES_USER: bw_monitor
+          POSTGRES_PASSWORD: bw_monitor_test_password
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U bw_monitor -d bw_monitor_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
@@ -26,43 +39,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt PyYAML
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
 
-      - name: Reject generated database and cache files
-        run: |
-          bad="$(find . -path './.git' -prune -o \( -name '__pycache__' -o -name '*.pyc' -o -name 'bandwidth.db*' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print)"
-          test -z "$bad" || { printf '%s\n' "$bad"; exit 1; }
+      - name: Static and installer preflight
+        run: ./preflight.sh --use-current-python --skip-live
 
-      - name: Validate shell syntax and ShellCheck
-        run: |
-          while IFS= read -r -d '' file; do
-            echo "bash -n $file"
-            bash -n "$file"
-            shellcheck -x -S warning "$file" || true
-          done < <(find . -type f -name '*.sh' -print0)
+      - name: Full PostgreSQL application integration
+        env:
+          BW_TEST_DATABASE_URL: postgresql://bw_monitor:bw_monitor_test_password@127.0.0.1:55432/bw_monitor_test
+        run: python tests/test_v50_postgres_integration.py
 
-      - name: Validate Python syntax
+      - name: Validate Timescale schema on a fresh full app schema
+        env:
+          PGPASSWORD: bw_monitor_test_password
         run: |
-          python -m py_compile release/*.py deploy/agent/agent.py
+          psql -h 127.0.0.1 -p 55432 -U bw_monitor -d bw_monitor_test \
+            -v ON_ERROR_STOP=1 -f postgres/sql/001_bootstrap.sql
+          psql -h 127.0.0.1 -p 55432 -U bw_monitor -d bw_monitor_test \
+            -v ON_ERROR_STOP=1 -f postgres/sql/002_timescale.sql
+          psql -h 127.0.0.1 -p 55432 -U bw_monitor -d bw_monitor_test \
+            -v ON_ERROR_STOP=1 -f postgres/sql/003_native_indexes.sql
+          psql -h 127.0.0.1 -p 55432 -U bw_monitor -d bw_monitor_test \
+            -Atc "SELECT count(*) FROM timescaledb_information.hypertables" \
+            | grep -Eq '^[1-9][0-9]*$'
 
-      - name: Validate YAML
-        run: |
-          python - <<'PY_YAML'
-          from pathlib import Path
-          import yaml
-          for path in sorted(Path('ansible').glob('*.yml')) + sorted(Path('.github/workflows').glob('*.yml')):
-              yaml.safe_load(path.read_text(encoding='utf-8'))
-              print('YAML OK:', path)
-          PY_YAML
-
-      - name: Run full release preflight
-        run: |
-          cd release
-          BW_PYTHON_BIN="$(command -v python)" \
-          BW_PREFLIGHT_ONLY=1 \
-          bash ./install_bw_monitor_v48_12_9.sh
-
-      - name: Verify checksum manifest
-        run: |
-          sha256sum -c SHA256SUMS
+      - name: Release audit
+        env:
+          BW_TEST_DATABASE_URL: postgresql://bw_monitor:bw_monitor_test_password@127.0.0.1:55432/bw_monitor_test
+        run: ./tools/release-audit.sh --use-current-python

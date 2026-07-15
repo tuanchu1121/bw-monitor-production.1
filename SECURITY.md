@@ -1,41 +1,37 @@
-# Security Policy
+# Security policy
 
-## Never commit or publish
+## Secrets
 
-- `/etc/default/bw-monitor`
+Never commit or publish:
+
 - `/root/bw-monitor-credentials.env`
+- `/etc/default/bw-monitor`
+- `/etc/default/bw-monitor-postgres`
 - `/etc/bwagent.env`
-- `bandwidth.db`, `bandwidth.db-wal`, `bandwidth.db-shm`
-- plaintext REST API keys
-- Agent push tokens
-- Admin passwords or password hashes
-- decrypted Ansible secret files or Vault passwords
-- production diagnostic bundles unless reviewed and intentionally shared
+- PostgreSQL dumps or backup directories
+- production Ansible inventories
+- Ansible Vault password files
+- private SSH keys or TLS private keys
+- real Agent tokens or scoped REST API keys
 
-## Token separation
+The repository `.gitignore` blocks common secret/data file patterns, but review every commit before pushing.
 
-`BW_MONITOR_TOKEN` authenticates Agent `POST /push` ingestion only. External applications must use separately generated scoped REST API keys. Never give the Agent token to a desktop/API client.
+## Network exposure
 
-## Recommended deployment
+- PostgreSQL is bound only to `127.0.0.1:55432` by default.
+- In domain mode, expose Nginx TCP 80/443 and keep Gunicorn on loopback.
+- In IP mode, expose only the configured application port when required.
+- Do not publish Docker volume paths or database credentials.
+- Use HTTPS domain mode for Internet-facing production deployments.
 
-Use domain + HTTPS mode for Internet-facing production. It binds Gunicorn to loopback and exposes Nginx on 80/443. Do not open the internal Gunicorn port publicly in this mode.
+## Authentication
 
-## Secrets at rest
+Agent `/push` uses a dedicated `BW_MONITOR_TOKEN`. REST API keys are separate, scoped and support Allowed IP/CIDR, expiry and rate limits. Do not reuse Agent tokens as REST API keys.
 
-The installer writes Monitor and Agent environments as `root:root` mode `0600`. The root credential file is also mode `0600`. Keep root access restricted and include these files in secure backup handling.
+## Host hardening
 
-## REST API keys
-
-Use least-privilege scopes, expiration, per-key rate limits and Allowed IP/CIDR restrictions. Rotate keys after accidental disclosure. Plaintext key secrets are not recoverable after the one-time creation/rotation display.
-
-## GitHub visibility
-
-A public repository exposes source code, not secrets. This repository is prepared to contain no database or real credentials. A private repository requires an authenticated GitHub token for remote bootstrap scripts; use a fine-grained read-only token when possible.
-
-## Diagnostics
-
-`collect-diagnostics.sh` redacts known secret fields and does not include the database. Logs can still contain hostnames, IP addresses, UUIDs and operational metadata. Review every bundle before sharing.
+The Agent service keeps `ProtectHome=read-only` so it can inspect storage under `/home` without writable home access. The Monitor database container uses a named volume and bounded JSON logs. Keep Docker, OS packages and the repository release updated.
 
 ## Reporting
 
-Do not open a public issue containing production credentials, customer data, complete logs, database files or unredacted environment files.
+Report vulnerabilities privately to the repository owner. Do not include production credentials, customer data or raw database dumps in public issues.

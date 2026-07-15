@@ -1,127 +1,42 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-PYTHON="${BW_AUDIT_PYTHON:-}"
 USE_CURRENT=0
-[[ "${1:-}" == "--use-current-python" ]] && USE_CURRENT=1
-
-log(){ printf '\n==> %s\n' "$*"; }
-fail(){ echo "ERROR: $*" >&2; exit 1; }
+SKIP_LIVE=0
+while (($#)); do
+  case "$1" in
+    --use-current-python) USE_CURRENT=1; shift ;;
+    --skip-live) SKIP_LIVE=1; shift ;;
+    -h|--help) echo "Usage: $0 [--use-current-python] [--skip-live]"; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
 cd "$ROOT"
 
-log 'Remove generated Python caches and reject database files'
-find . -path './.git' -prune -o -path './dist' -prune -o -type d -name '__pycache__' -prune -exec rm -rf {} +
-find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -not -path './.git/*' -not -path './dist/*' -delete
-if find . -path './.git' -prune -o -path './dist' -prune -o \( -name 'bandwidth.db*' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print | grep -q .; then
-  find . -path './.git' -prune -o -path './dist' -prune -o \( -name 'bandwidth.db*' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print
-  fail 'Database files are present.'
-fi
-if grep -RInE --exclude-dir=.git --exclude-dir=dist \
-  '(bwm_live_[0-9a-f]{12}_[A-Za-z0-9]{32,}|bwm_push_[A-Za-z0-9]{32,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY)' .; then
-  fail 'Potential committed secret detected.'
-fi
+args=()
+((USE_CURRENT)) && args+=(--use-current-python)
+((SKIP_LIVE)) && args+=(--skip-live)
+./preflight.sh "${args[@]}"
 
-log 'Validate shell syntax'
-while IFS= read -r -d '' file; do echo "bash -n $file"; bash -n "$file"; done < <(find . -path './.git' -prune -o -path './dist' -prune -o -type f -name '*.sh' -print0)
+printf '\n==> Verify executable product entry points\n'
+for f in install.sh update.sh setup.sh backup.sh restore.sh doctor.sh db-check.sh audit.sh collect-diagnostics.sh uninstall.sh install-agent.sh uninstall-agent.sh \
+  deploy/postgres/*.sh deploy/agent/*.sh ansible/*.sh tools/*.sh; do
+  [[ -f "$f" ]] || continue
+  [[ -x "$f" ]] || { echo "Not executable: $f" >&2; exit 1; }
+done
 
-if ((USE_CURRENT)); then
-  [[ -n "$PYTHON" ]] || PYTHON="$(command -v python3)"
-else
-  log 'Create isolated validation venv'
-  python3 -m venv "$TMP/venv"
-  PYTHON="$TMP/venv/bin/python3"
-  "$PYTHON" -m pip install --upgrade pip >/dev/null
-  "$PYTHON" -m pip install -r requirements.txt PyYAML >/dev/null
-fi
+printf '\n==> Verify no duplicate/stale runtime trees\n'
+[[ ! -e release && ! -e enterprise && ! -e deploy/monitor && ! -e deploy/enterprise ]]
+[[ -f app/app.py && -f app/bw_pg.py && -f app/maintenance.py && -f app/retention.py ]]
+[[ -f deploy/agent/agent.py && -f deploy/agent/install-agent.sh ]]
 
-log 'Validate Python syntax'
-"$PYTHON" -m py_compile release/*.py deploy/agent/agent.py
-
-log 'Validate YAML syntax'
-"$PYTHON" - <<'PY_YAML'
-from pathlib import Path
-import yaml
-paths = sorted(Path('ansible').glob('*.yml')) + sorted(Path('.github/workflows').glob('*.yml'))
-for path in paths:
-    yaml.safe_load(path.read_text(encoding='utf-8'))
-    print('YAML OK:', path)
-PY_YAML
-
-log 'Verify production installer flow'
-./tools/test-installer-flow.sh
-
-log 'Verify release identity and deployment links'
-grep -q '^49.0.0-prod-r1-enterprise-timescale$' VERSION || fail 'Root VERSION mismatch.'
-grep -q '^49.0.0-prod-r1-enterprise-timescale$' release/VERSION || fail 'Release VERSION mismatch.'
-grep -q 'V48129_BUILD = "r4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Original application r4 marker missing.'
-grep -q 'V48133_VERSION = "48.13.3"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.3 storage integration missing.'
-grep -q 'V48134_VERSION = "48.13.4"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.4 storage precision missing.'
-grep -q 'V48135_VERSION = "48.13.5"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.5 storage root-bars missing.'
-grep -q 'V48135_BUILD = "r2"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.5-r2 VM disk panels missing.'
-grep -q 'V48136_VERSION = "48.13.6"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.6 grouped storage missing.'
-grep -q 'V48136_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.6-r1 grouped storage build missing.'
-grep -q 'V48137_VERSION = "48.13.7"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.7 retained Storage history missing.'
-grep -q 'V48137_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.7-r1 retained Storage build missing.'
-grep -q 'V48138_VERSION = "48.13.8"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.8 Storage identity UI missing.'
-grep -q 'V48138_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.8-r1 Storage identity build missing.'
-grep -q 'V48139_VERSION = "48.13.9"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.9 Abuse/Storage card UI missing.'
-grep -q 'V48139_BUILD = "r2"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.13.9-r2 build missing.'
-grep -q 'V48140_VERSION = "48.14.0"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.14.0 performance marker missing.'
-grep -q 'V48140_BUILD = "r1"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v48.14.0-r1 build missing.'
-grep -q 'V4900_VERSION = "49.0.0"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v49 Enterprise marker missing.'
-grep -q 'enterprise_enqueue_control' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v49 Enterprise purge outbox missing.'
-grep -q 'api_v1_enterprise_vm_history_v4900' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'v49 Enterprise history API missing.'
-test -x install-enterprise.sh || fail 'Enterprise bootstrap missing or not executable.'
-test -x update-enterprise.sh || fail 'Enterprise updater missing or not executable.'
-test -x deploy/enterprise/install-enterprise.sh || fail 'Enterprise installer missing or not executable.'
-test -f enterprise/sql/001_enterprise_schema.sql || fail 'Enterprise Timescale schema missing.'
-grep -q "CREATE MATERIALIZED VIEW IF NOT EXISTS bw.vm_disk_1h" enterprise/sql/001_enterprise_schema.sql || fail 'Enterprise hourly disk aggregate missing.'
-grep -q 'CREATE TABLE IF NOT EXISTS bw.purge_tombstones' enterprise/sql/001_enterprise_schema.sql || fail 'Enterprise purge tombstones missing.'
-grep -q 'process_control' enterprise/bw_enterprise_writer.py || fail 'Enterprise purge writer missing.'
-grep -q 'spool_file' enterprise/bw_enterprise_writer.py || fail 'Enterprise durable outbox acknowledgement missing.'
-grep -q '49-enterprise-spool.conf' deploy/enterprise/install-enterprise.sh || fail 'Web service spool permission drop-in missing.'
-grep -q 'test_v49_0_enterprise.py' release/install_bw_monitor_v48_12_9.sh || fail 'v49 regression is not wired into preflight.'
-grep -q 'vm_disk_summary_current' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Materialized VM disk summary missing.'
-grep -q 'node_storage_mount_summary_current' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Materialized node storage summary missing.'
-grep -q 'redis-server' deploy/monitor/install-monitor.sh || fail 'Redis deployment support missing.'
-grep -q 'BW_GUNICORN_PRELOAD' deploy/monitor/start-monitor.sh || fail 'Gunicorn preload support missing.'
-grep -q 'test_v48_14_0_performance.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.14.0 performance regression is not wired into preflight.'
-test -x tools/benchmark-performance.py || fail 'Performance benchmark tool missing or not executable.'
-grep -q 'test_v48_13_9_abuse_storage_cards.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.13.9 regression is not wired into preflight.'
-grep -q 'test_v48_13_9_r2_swap_top_slots.py' release/install_bw_monitor_v48_12_9.sh || fail 'v48.13.9-r2 regression is not wired into preflight.'
-grep -q 'def collect_swap_filesystems' deploy/agent/agent.py || fail 'Active swap collector missing.'
-grep -q '_v48133_disk_sort_link("SLOTS", "diskcount"' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Top VM SLOTS sort missing.'
-grep -q 'storage-vm-identity' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'UUID-first Storage identity missing.'
-grep -q 'storage-top-card' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Top VM-style Storage controls missing.'
-grep -q 'storage_payload' release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Retained Storage payload missing.'
-grep -q 'test_v48_13_7_storage_history.py' release/install_bw_monitor_v48_12_9.sh || fail 'Storage history regression is not wired into preflight.'
-grep -q 'ProtectHome=read-only' deploy/agent/install-agent.sh || fail 'Agent service still hides /home.'
-grep -q 'AGENT_VERSION = 12' release/bwagent_daemon_v10_dynamic_abuse.py || fail 'Agent v12 missing.'
-grep -q "NOT IN ('cycles-v2','cycles-v3','cycles-v3-ram')" release/bw_monitor_app_v48_12_9_operations_ui.py || fail 'Current Abuse import-preservation guard missing.'
-grep -q 'def _walk_findmnt_rows' release/bwagent_daemon_v10_dynamic_abuse.py || fail 'Recursive findmnt mount discovery missing.'
-grep -q 'install_bw_monitor_v48_12_9.sh' deploy/monitor/install-monitor.sh || fail 'Production installer is not linked to v48.12.9.'
-grep -q 'db-check.sh' deploy/monitor/install-monitor.sh || fail 'Database checker is not installed.'
-grep -q 'collect-diagnostics.sh' deploy/monitor/install-monitor.sh || fail 'Diagnostics collector is not installed.'
-
-if [[ "${BW_AUDIT_SKIP_FULL_PREFLIGHT:-0}" == "1" ]]; then
-  log 'Skip full release preflight because it was run separately in this build session'
-else
-  log 'Run full release preflight'
-  (
-    cd release
-    BW_PYTHON_BIN="$PYTHON" BW_PREFLIGHT_ONLY=1 ./install_bw_monitor_v48_12_9.sh
-  )
-fi
-
-log 'Remove Python caches created by validation'
-find . -path './.git' -prune -o -path './dist' -prune -o -type d -name '__pycache__' -prune -exec rm -rf {} +
-find . -type f \( -name '*.pyc' -o -name '*.pyo' \) -not -path './.git/*' -not -path './dist/*' -delete
-
-log 'Generate and verify checksum manifests'
-find release -maxdepth 1 -type f ! -name 'SHA256SUMS*' -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS_v48_12_9.txt
-find . -path './.git' -prune -o -path './dist' -prune -o -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+printf '\n==> Generate repository checksum manifest\n'
+find . \
+  -path './.git' -prune -o \
+  -path './dist' -prune -o \
+  -type d -name __pycache__ -prune -o \
+  -type f ! -name SHA256SUMS -print0 \
+| sort -z | xargs -0 sha256sum > SHA256SUMS
 sha256sum -c SHA256SUMS >/dev/null
 
-log 'Release audit passed'
+printf '\nPASS: BW Monitor v50 release audit\n'

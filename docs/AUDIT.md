@@ -1,47 +1,31 @@
-# Audit and Diagnostics
+# Audit and diagnostics
 
-## Quick doctor
-
-```bash
-sudo /opt/bw-monitor/doctor.sh
-```
-
-Checks service/timer state, Python compilation, local HTTP, database presence, secret-file permissions, free disk, maintenance worker count, and database readability.
-
-## Deep audit
+Fast health:
 
 ```bash
-sudo /opt/bw-monitor/audit.sh
+bw-monitorctl doctor
 ```
 
-Checks:
-
-- host, OS, kernel and release markers;
-- systemd services/timers and maintenance workers;
-- Python runtime and pinned packages;
-- application compilation;
-- environment and credential permissions;
-- selected non-secret environment values;
-- listening sockets, Nginx syntax and HTTP endpoints;
-- public HTTPS certificate metadata when configured;
-- disk and SQLite/WAL sizes;
-- SQLite quick/integrity result;
-- recent warning/error logs.
-
-## Full release preflight
+Deep read-only audit:
 
 ```bash
-curl -fsSL \
-https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
-| sudo bash -s -- --full-preflight
+bw-monitorctl audit
 ```
 
-This downloads the current repository revision and runs all release regression suites against temporary SQLite databases. It does not install files when `BW_PREFLIGHT_ONLY=1` is used internally.
-
-## Sanitized diagnostics
+Database details:
 
 ```bash
-sudo /opt/bw-monitor/collect-diagnostics.sh
+bw-monitorctl db-check
 ```
 
-The output archive is mode `0600` and excludes database content. Known token, password hash, secret key and Authorization values are redacted. Review the archive manually before sharing because logs can still contain environment-specific hostnames, IPs, UUIDs and operational details.
+Sanitized support bundle:
+
+```bash
+bw-monitorctl diagnostics
+```
+
+Release source audit:
+
+```bash
+./tools/release-audit.sh
+```

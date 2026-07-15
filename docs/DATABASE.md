@@ -1,93 +1,102 @@
-# Database Design and Health Checks
+# PostgreSQL and TimescaleDB design
 
-BW Monitor uses SQLite in WAL mode. The application keeps current state and bounded historical data in the same database.
+## One source of truth
 
-## Important data groups
+All persistent runtime data is in one PostgreSQL database. TimescaleDB is loaded as a PostgreSQL extension. Redis, when enabled, is only a reconstructable page cache.
 
-Current/inventory data:
+## Current and history paths
+
+Current-state pages use bounded tables such as:
 
 ```text
 node_inventory
 vm_inventory
-current/cache tables
+vm_current_fast
+vm_latest_metrics
+vm_perf_latest
+vm_disk_current
+node_storage_current
 vm_abuse_state
-users/settings
-api_keys
 ```
 
-Historical data:
+Dashboard, Top VM, Current Abuse and Storage pages do not need to scan all historical samples.
+
+Time-series/history tables include:
 
 ```text
 node_stats
-vm_perf
-bandwidth history tables
-vm_abuse_events
-vm_abuse_incidents
-api_access_logs
-api_management_events
-node/account logs
-maintenance history
-retention history
+vm_perf_stats
+node_host_stats
+node_filesystem_stats
+node_physical_net_stats
+agent_health_stats
+node_push_snapshots
+bandwidth_hourly
+bandwidth_daily
 ```
+
+Fresh installation converts supported history tables into Timescale hypertables with integer Unix-time partitioning. BRIN indexes support time pruning while existing B-tree indexes support exact Node/UUID lookups.
+
+## Ingest behavior
+
+One Agent payload represents a real 300-second window. The Monitor transaction:
+
+1. validates the push token;
+2. de-duplicates `node + push_time`;
+3. updates inventory and current projections;
+4. writes synchronized history rows;
+5. updates storage/disk state;
+6. evaluates Abuse state/events;
+7. commits once.
 
 ## Retention
 
-```text
-0 → 48 hours      every real push is retained
-48 hours → 7 days one real hourly snapshot is retained
-> 7 days           historical rows are deleted
-```
+The application retention implementation remains authoritative:
 
-The retention worker uses a fail-fast lock, bounded batches, and does not stop the web service or run `VACUUM`.
+- 0–48 hours: every real 5-minute push;
+- 48 hours–7 days: one real synchronized snapshot/hour;
+- older than 7 days: bounded deletion;
+- current and control data are preserved.
 
-## Read-only database check
+## Connection pooling
 
-```bash
-sudo /opt/bw-monitor/db-check.sh --timeout 120
-```
-
-The report includes:
-
-- database, WAL and SHM sizes;
-- SQLite version and journal mode;
-- page size, page count and freelist count;
-- estimated reusable free bytes;
-- schema table/index counts;
-- row counts for important tables;
-- `PRAGMA quick_check` result;
-- elapsed time and timeout status.
-
-The checker opens SQLite with `mode=ro`, enables `query_only`, and never writes application data.
-
-## Full integrity check
-
-Run during a maintenance window on large databases:
-
-```bash
-sudo /opt/bw-monitor/db-check.sh \
-  --full \
-  --timeout 3600
-```
-
-Exit codes:
+`app/bw_pg.py` uses psycopg 3 and `psycopg_pool.ConnectionPool`. Configure in `/etc/default/bw-monitor`:
 
 ```text
-0    check passed
-2    file/open/query error
-3    integrity result was not ok
-124  scan exceeded the configured timeout
+BW_DB_POOL_MIN
+BW_DB_POOL_MAX
+BW_DB_POOL_TIMEOUT
+BW_DB_STATEMENT_TIMEOUT_MS
+BW_DB_LOCK_TIMEOUT_MS
+BW_DB_IDLE_TX_TIMEOUT_MS
 ```
 
-A timeout does not by itself prove corruption. It means the scan did not finish in the allotted time.
+## PostgreSQL tuning
 
-## Consistent backup
+The installer chooses conservative host-RAM-based values for shared buffers, effective cache size, maintenance memory, work memory, workers and Timescale background workers. The Docker Compose service uses:
+
+- WAL compression;
+- long, smooth checkpoints;
+- SSD-oriented random-page cost and I/O concurrency;
+- JIT disabled for predictable dashboard queries;
+- loopback-only database port;
+- bounded container logs.
+
+Measure production behavior before changing values.
+
+## Inspect
 
 ```bash
-sudo /opt/bw-monitor/backup.sh
+bw-monitorctl db-check
+bw-monitorctl psql
 ```
 
-The script uses the SQLite backup API, so the live database does not need to be copied together with WAL/SHM files manually.
+Useful SQL:
 
-## Do not do this on a live large DB
-
-Do not delete `-wal` or `-shm` while the service is running. Do not copy only `bandwidth.db` with `cp` as a normal backup while writes are active. Do not run automatic `VACUUM` on every retention cycle. Do not infer corruption from a blank `sqlite3 PRAGMA quick_check` command without checking its exit code and timeout.
+```sql
+SELECT pg_size_pretty(pg_database_size(current_database()));
+SELECT * FROM timescaledb_information.hypertables;
+SELECT relname, n_live_tup, n_dead_tup
+FROM pg_stat_user_tables
+ORDER BY n_live_tup DESC;
+```

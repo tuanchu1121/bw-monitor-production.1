@@ -1,50 +1,54 @@
-# Domain and HTTPS Deployment
+# Domain, Nginx and HTTPS
 
-## Prerequisites
+Recommended production path:
 
-- The domain A/AAAA record resolves to the Monitor server.
-- TCP ports 80 and 443 are reachable from the Internet.
-- The server clock is correct.
-- No conflicting Nginx/Apache site occupies the domain.
+```text
+Internet → Nginx :443 → Gunicorn 127.0.0.1:8080 → PostgreSQL loopback
+```
 
-## Install
+## First install
+
+1. Point A/AAAA records at the Monitor.
+2. Allow inbound TCP 80 and 443.
+3. Run:
 
 ```bash
 curl -fsSL \
 https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
-| sudo bash -s -- \
-  --domain monitor.example.com \
-  --email ops@example.com
+| bash -s -- \
+--domain monitor.example.com \
+--email ops@example.com
 ```
 
-The installer:
-
-1. Binds Gunicorn to `127.0.0.1:8080`.
-2. Installs an Nginx reverse proxy.
-3. Requests or installs a Let's Encrypt certificate with Certbot.
-4. Redirects HTTP to HTTPS.
-5. Enables secure Admin cookies.
-6. Trusts forwarding headers only from loopback Nginx.
-7. Verifies local HTTP and public HTTPS.
-
-## Validate
+## Switch an existing IP install to domain
 
 ```bash
-nginx -t
-systemctl status nginx --no-pager -l
-systemctl status bw-monitor --no-pager -l
-curl -I https://monitor.example.com/login
-sudo /opt/bw-monitor/audit.sh
+bw-monitorctl domain set monitor.example.com ops@example.com
 ```
 
-## Firewall
+The PostgreSQL volume, users, Agent token, settings and data are preserved.
 
-In domain mode, expose only 80/443 publicly. Do not expose the Gunicorn port. The installer can configure UFW with `--firewall`; verify the detected SSH port before enabling it on unusual systems.
+## Switch back to IP
 
-## Existing certificate
+```bash
+bw-monitorctl domain remove 203.0.113.10 8080
+```
 
-When a matching Certbot certificate already exists, the installer reuses it. When the first certificate is issued, `--email` is required.
+## Certificate checks
 
-## Changing a domain
+```bash
+certbot certificates
+systemctl status certbot.timer --no-pager
+nginx -t
+curl -I https://monitor.example.com/login
+```
 
-Run the installer again with the new `--domain` and `--email`. Validate DNS before the change. Review old certificates and Nginx sites after successful migration.
+## DNS/CAA failures
+
+```bash
+dig +short monitor.example.com A
+dig +short monitor.example.com AAAA
+dig +short monitor.example.com CAA
+```
+
+The A/AAAA record must resolve to this server. CAA must permit Let's Encrypt or be absent.

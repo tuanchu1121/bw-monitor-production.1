@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 REPO="tuanchu1121/bw-monitor-production.1"
-VISIBILITY="--private"
+VISIBILITY="--public"
 FORCE=0
 CREATE_RELEASE=0
 SKIP_AUDIT=0
-TAG="v48.13.9-prod-r1"
+VERSION="$(cat "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/VERSION")"
+TAG="v${VERSION%-github-turnkey}"
 
 usage(){ cat <<'USAGE'
 Usage: publish-github.sh [options]
 
 Options:
   --repo OWNER/NAME   Target repository. Default: tuanchu1121/bw-monitor-production.1
-  --private           Create a private repository when missing (default)
-  --public            Create a public repository when missing
-  --release           Build archives and create/update tag/release v48.13.9-prod-r1
+  --private           Create a private repository when missing
+  --public            Create a public repository when missing (default)
+  --release           Build archives and create/update the VERSION-derived tag/release
   --tag NAME          Override the release tag
   --force             Push main with --force-with-lease
   --skip-audit        Skip local validation. Not recommended
@@ -52,7 +53,7 @@ if ! git config user.email >/dev/null; then git config user.email "${GIT_AUTHOR_
 
 git add -A
 if ! git diff --cached --quiet; then
-  git commit -m "BW Monitor v48.14.0 High Performance Edition"
+  git commit -m "BW Monitor $VERSION"
 fi
 
 if gh repo view "$REPO" >/dev/null 2>&1; then

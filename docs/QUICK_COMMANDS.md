@@ -1,81 +1,36 @@
-# Quick Commands
-
-## Install Monitor with IP
+# Quick commands
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
-| sudo bash -s -- --public-ip 203.0.113.10 --port 8080 --run-retention-now
+bw-monitorctl status
+bw-monitorctl doctor
+bw-monitorctl db-check
+bw-monitorctl logs all 200
+bw-monitorctl follow monitor
+bw-monitorctl restart
+bw-monitorctl backup
+bw-monitorctl retention
+bw-monitorctl vacuum
+bw-monitorctl psql
+bw-monitorctl urls
+bw-monitorctl credentials
+bw-monitorctl version
+bw-monitorctl update
 ```
 
-## Install Monitor with domain
+Agent:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install.sh \
-| sudo bash -s -- --domain monitor.example.com --email ops@example.com
+systemctl status bwagent --no-pager -l
+journalctl -fu bwagent
 ```
 
-## Install/update one Agent
+Ansible Agent deployment:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/install-agent.sh \
-| sudo env BW_AGENT_API='https://monitor.example.com/push' BW_AGENT_TOKEN='TOKEN' bash
-```
-
-## Update Monitor
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/update.sh | sudo bash
-```
-
-## Doctor
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/doctor.sh | sudo bash
-```
-
-## Full audit
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/audit.sh \
-| sudo bash -s -- --full-preflight
-```
-
-## Database check
-
-```bash
-sudo /opt/bw-monitor/db-check.sh --timeout 120
-```
-
-## Backup
-
-```bash
-sudo /opt/bw-monitor/backup.sh
-```
-
-## Diagnostics
-
-```bash
-sudo /opt/bw-monitor/collect-diagnostics.sh
-```
-
-## Logs
-
-```bash
-journalctl -fu bw-monitor.service
-journalctl -fu bw-monitor-retention.service
-journalctl -fu bwagent.service
-```
-
-## Safe Monitor removal
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall.sh \
-| sudo bash -s -- --yes
-```
-
-## Agent removal
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tuanchu1121/bw-monitor-production.1/main/uninstall-agent.sh \
-| sudo bash
+bash ansible/deploy-agent.sh \
+-i ansible/test.txt \
+--api 'https://monitor.example.com/push' \
+--token "$BW_TOKEN" \
+--forks 20 \
+--serial 10
 ```

@@ -1,38 +1,35 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-INSTALLER="$ROOT/deploy/monitor/install-monitor.sh"
-BOOTSTRAP="$ROOT/install.sh"
+I="$ROOT/deploy/postgres/install-postgres-native.sh"
+fail(){ echo "ERROR: $*" >&2; exit 1; }
+for f in "$ROOT/install.sh" "$ROOT/update.sh" "$I" "$ROOT/deploy/postgres/bw-monitorctl.sh" "$ROOT/deploy/postgres/backup.sh" "$ROOT/deploy/postgres/restore.sh"; do
+  [[ -f "$f" ]] || fail "missing $f"
+  bash -n "$f"
+done
 
-fail() { echo "ERROR: $*" >&2; exit 1; }
-line_of() {
-  local pattern="$1"
-  grep -nF "$pattern" "$INSTALLER" | head -n1 | cut -d: -f1
-}
+grep -q 'RELEASE="50.0.0-prod-r1-postgres-native"' "$I" || fail "release marker missing"
+grep -q 'tuanchu1121/bw-monitor-production.1' "$ROOT/install.sh" || fail "default GitHub repository is wrong"
+grep -q 'deploy/postgres/install-postgres-native.sh' "$ROOT/install.sh" || fail "bootstrap does not launch PostgreSQL-native installer"
+grep -q -- '--public-ip' "$I" || fail "public IP mode missing"
+grep -q -- '--domain' "$I" || fail "domain mode missing"
+grep -q -- '--ip-mode' "$I" || fail "domain-to-IP switch missing"
+grep -q 'certbot --nginx' "$I" || fail "Let's Encrypt automation missing"
+grep -q '127.0.0.1:${BW_PG_PORT:-55432}:5432' "$ROOT/postgres/docker-compose.yml" || fail "database is not loopback-only"
+grep -q 'timescale/timescaledb:2.27.2-pg17-oss' "$ROOT/postgres/docker-compose.yml" || fail "pinned Timescale image missing"
+grep -q "BW_REDIS_ENABLED='\$REDIS_CACHE'" "$I" || fail "optional Redis switch missing"
+grep -q 'REDIS_CACHE=0' "$I" || fail "Redis is not default-off"
+grep -q 'Agent cadence:  local 15-second samples, one push every 300 seconds' "$I" || fail "exact Agent cadence output missing"
+grep -q 'Retention:      0-48h real 5-minute pushes; 48h-7d one real/hour; >7d delete' "$I" || fail "exact retention output missing"
+grep -q 'pg_dump' "$ROOT/deploy/postgres/backup.sh" || fail "pg_dump backup missing"
+grep -q 'pg_restore' "$ROOT/deploy/postgres/restore.sh" || fail "pg_restore restore missing"
+grep -q 'timescaledb_pre_restore' "$ROOT/deploy/postgres/restore.sh" || fail "Timescale pre-restore hook missing"
+grep -q 'timescaledb_post_restore' "$ROOT/deploy/postgres/restore.sh" || fail "Timescale post-restore hook missing"
+grep -q 'ProtectHome=read-only' "$ROOT/deploy/agent/install-agent.sh" || fail "Agent /home visibility fix missing"
+grep -q 'become: "{{ (ansible_user | default('"'"'root'"'"')) != '"'"'root'"'"' }}"' "$ROOT/ansible/deploy-agent.yml" || fail "Ansible root/sudo behavior missing"
 
-[[ -f "$INSTALLER" ]] || fail "Installer not found"
-bash -n "$INSTALLER"
-bash -n "$BOOTSTRAP"
+for doc in README.md docs/README_VI.md docs/INSTALL.md docs/DOMAIN.md docs/MANAGEMENT.md docs/DATABASE.md docs/BACKUP_RESTORE.md docs/ANSIBLE.md docs/UPGRADE.md docs/TROUBLESHOOTING.md docs/PUBLISHING.md; do
+  [[ -s "$ROOT/$doc" ]] || fail "missing documentation: $doc"
+done
 
-grep -q 'RELEASE="49.0.0-prod-r1-enterprise-timescale"' "$INSTALLER" || fail "High Performance release marker missing"
-grep -q 'tuanchu1121/bw-monitor-production.1' "$BOOTSTRAP" || fail "bootstrap repository default is wrong"
-grep -q 'tuanchu1121/bw-monitor-production.1' "$INSTALLER" || fail "deployment repository default is wrong"
-grep -q '^wait_for_http()' "$INSTALLER" || fail "HTTP readiness retry helper is missing"
-grep -q 'wait_for_http "http://127.0.0.1:$PORT/login" "Local health" 60 2' "$INSTALLER" || fail "local HTTP readiness loop is missing"
-grep -q 'Credentials are preserved in $CREDENTIAL_FILE' "$INSTALLER" || fail "health failure does not preserve credentials"
-grep -q 'Existing Admin password hash was found but $CREDENTIAL_FILE is missing' "$INSTALLER" || fail "interrupted-install credential recovery is missing"
-
-cred_line="$(line_of 'Write root-only deployment credentials before service verification')"
-verify_line="$(line_of 'Verify production services')"
-[[ -n "$cred_line" && -n "$verify_line" ]] || fail "Could not locate credential/verification stages"
-(( cred_line < verify_line )) || fail "Credentials must be written before service verification"
-
-grep -q "printf 'BW_ADMIN_PASSWORD=%q" "$INSTALLER" || fail "Admin password is not written to the credential file"
-grep -q "chmod 0600 \"\$CREDENTIAL_FILE\"" "$INSTALLER" || fail "Credential file mode 0600 is missing"
-
-grep -q 'redis-server' "$INSTALLER" || fail "Redis package installation is missing"
-grep -q 'BW_REDIS_ENABLED' "$INSTALLER" || fail "Redis environment configuration is missing"
-grep -q 'BW_SQLITE_MMAP_MIB' "$INSTALLER" || fail "SQLite performance environment is missing"
-grep -q 'BW_RELEASE_PREFLIGHT_ALREADY_PASSED=1' "$INSTALLER" || fail "Duplicate release preflight suppression is missing"
-
-echo "PASS: production installer writes credentials before health checks, configures the performance layer, retries HTTP readiness, and recovers interrupted installs"
+echo "PASS: v50 GitHub/new-server/domain/operations installer flow"
